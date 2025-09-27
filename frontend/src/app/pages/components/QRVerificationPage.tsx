@@ -2,7 +2,8 @@
 
 import { useAccount, useDisconnect } from 'wagmi';
 import { useState, useEffect } from 'react';
-import { ethers } from 'ethers';
+import { countries, SelfQRcodeWrapper } from '@selfxyz/qrcode';
+import { SelfAppBuilder } from '@selfxyz/qrcode';
 
 interface QRVerificationPageProps {
   onVerificationComplete?: () => void;
@@ -14,47 +15,49 @@ export default function QRVerificationPage({
   onBackToWallet 
 }: QRVerificationPageProps) {
   const { address, isConnected } = useAccount();
-  const { disconnect } = useDisconnect(); // Add this hook
-  const [qrCodeData, setQrCodeData] = useState<string>('');
-  const [isGenerating, setIsGenerating] = useState(true);
-  const [verificationStatus, setVerificationStatus] = useState<'pending' | 'scanning' | 'verified' | 'failed'>('pending');
+  const { disconnect } = useDisconnect();
+  const [selfApp, setSelfApp] = useState<any | null>(null);
 
-  // Generate QR code data when component mounts
+  // Initialize Self Protocol
   useEffect(() => {
-    const generateQRData = () => {
-      const mockQRData = `passport-verification://verify?wallet=${address}&timestamp=${Date.now()}`;
-      setQrCodeData(mockQRData);
-      setIsGenerating(false);
-      setVerificationStatus('scanning');
-    };
-
     if (isConnected && address) {
-      generateQRData();
+      const app = new SelfAppBuilder({
+        version: 2,
+        appName: process.env.NEXT_PUBLIC_SELF_APP_NAME || 'Futures Pool',
+        scope: process.env.NEXT_PUBLIC_SELF_SCOPE || 'human-blacklist-scope',
+        endpoint: process.env.NEXT_PUBLIC_SELF_ENDPOINT ,
+        logoBase64: 'https://i.postimg.cc/mrmVf9hm/self.png',
+        userId: address,
+        endpointType: 'staging_celo',
+        userIdType: 'hex',
+        userDefinedData: 'Passport Verification for address: ' + address,
+        disclosures: {
+          minimumAge: 18,
+          excludedCountries: [
+            countries.UNITED_STATES
+          ],
+          ofac: false, 
+          passport_number: true,
+        },
+      }).build();
+
+      setSelfApp(app);
     }
   }, [isConnected, address]);
 
   const handleVerificationSuccess = () => {
-    setVerificationStatus('verified');
-    setTimeout(() => {
-      onVerificationComplete?.();
-    }, 2000);
+    onVerificationComplete?.();
   };
 
-  const handleVerificationFailure = () => {
-    setVerificationStatus('failed');
+  const handleVerificationError = () => {
+    console.error('Verification failed');
   };
 
-  const handleBackToWallet = () => {
-    onBackToWallet?.();
-  };
-
-  // Add the disconnect handler
   const handleDisconnect = () => {
     disconnect();
     onBackToWallet?.();
   };
 
-  // Redirect to wallet connect if not connected
   if (!isConnected || !address) {
     return (
       <div className="flex flex-col items-center justify-center h-screen bg-gray-50">
@@ -62,7 +65,7 @@ export default function QRVerificationPage({
           <h2 className="text-xl font-semibold text-red-600 mb-4">Wallet Not Connected</h2>
           <p className="text-gray-600 mb-6">Please connect your wallet first to proceed with verification.</p>
           <button
-            onClick={handleBackToWallet}
+            onClick={onBackToWallet}
             className="bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
           >
             Back to Wallet Connect
@@ -102,53 +105,21 @@ export default function QRVerificationPage({
           <div className="text-center">
             <h2 className="text-xl font-semibold mb-4">Scan QR Code for Verification</h2>
             
-            {isGenerating ? (
+            {!selfApp ? (
               <div className="flex flex-col items-center space-y-4">
                 <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600"></div>
-                <p className="text-gray-600">Generating verification QR code...</p>
+                <p className="text-gray-600">Initializing verification...</p>
               </div>
             ) : (
               <div className="space-y-4">
-                {/* Placeholder QR Code */}
-                <div className="bg-gray-200 border-2 border-dashed border-gray-300 rounded-lg p-8 mx-auto max-w-xs">
-                  <div className="text-center">
-                    <div className="text-6xl mb-2">📱</div>
-                    <p className="text-sm text-gray-600">QR Code Placeholder</p>
-                    <p className="text-xs text-gray-500 mt-2 break-all">{qrCodeData}</p>
-                  </div>
-                </div>
-
+                <SelfQRcodeWrapper
+                  selfApp={selfApp}
+                  onSuccess={handleVerificationSuccess}
+                  onError={handleVerificationError}
+                />
                 <p className="text-sm text-gray-600">
                   Use your mobile device to scan this QR code for passport verification
                 </p>
-
-                {/* Verification Status */}
-                {verificationStatus === 'scanning' && (
-                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                    <p className="text-yellow-800 font-medium">Waiting for verification...</p>
-                    <p className="text-yellow-600 text-sm mt-1">
-                      Please scan the QR code with your mobile device
-                    </p>
-                  </div>
-                )}
-
-                {verificationStatus === 'verified' && (
-                  <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                    <p className="text-green-800 font-medium">✓ Verification Successful!</p>
-                    <p className="text-green-600 text-sm mt-1">
-                      Your passport has been verified. Redirecting...
-                    </p>
-                  </div>
-                )}
-
-                {verificationStatus === 'failed' && (
-                  <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                    <p className="text-red-800 font-medium">✗ Verification Failed</p>
-                    <p className="text-red-600 text-sm mt-1">
-                      Please try again or contact support
-                    </p>
-                  </div>
-                )}
               </div>
             )}
           </div>
@@ -156,28 +127,11 @@ export default function QRVerificationPage({
           {/* Action Buttons */}
           <div className="flex space-x-4">
             <button
-              onClick={handleBackToWallet}
+              onClick={onBackToWallet}
               className="flex-1 bg-gray-600 text-white py-2 px-4 rounded-lg hover:bg-gray-700 transition-colors"
             >
               Back to Wallet
             </button>
-            
-            {verificationStatus === 'scanning' && (
-              <>
-                <button
-                  onClick={handleVerificationSuccess}
-                  className="flex-1 bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 transition-colors"
-                >
-                  Simulate Success
-                </button>
-                <button
-                  onClick={handleVerificationFailure}
-                  className="flex-1 bg-red-600 text-white py-2 px-4 rounded-lg hover:bg-red-700 transition-colors"
-                >
-                  Simulate Failure
-                </button>
-              </>
-            )}
           </div>
         </div>
       </div>
