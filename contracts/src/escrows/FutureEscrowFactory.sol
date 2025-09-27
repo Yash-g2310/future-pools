@@ -6,6 +6,7 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 import "./FutureEscrow.sol";
+import "../self/PassportVerifier.sol";
 
 contract FutureEscrowFactory is Ownable {
     using SafeERC20 for IERC20;
@@ -19,42 +20,57 @@ contract FutureEscrowFactory is Ownable {
         uint64 expireTime, 
         uint64 settlementTime
     );
+    
+    event DefaultReported(address indexed borrower, address indexed escrow);
 
-    // Immutable contract addresses
-    address public immutable oneInchRouter;      
+    // Immutable contract addresses          
     address public immutable pyusd;             
     address public immutable pyth;              
     address public immutable stakingPool;       
-    address public immutable proofOfHuman;      
+    address public immutable proofOfHuman;      // This points to PassportVerifier
 
     // Supported token price feeds
     mapping(address => bytes32) public tokenPriceIds;
     
     address[] public escrows;
+    mapping(address => bool) public authorizedEscrows;
 
     constructor(
-        address _oneInchRouter,
         address _pyusd,
         address _pyth,
         address _stakingPool,
-        address _proofOfHuman
+        address _passportVerifier
     ) Ownable(msg.sender) {
-        require(_oneInchRouter != address(0), "zero router");
         require(_pyusd != address(0), "zero pyusd");
         require(_pyth != address(0), "zero pyth");
         require(_stakingPool != address(0), "zero staking pool");
-        require(_proofOfHuman != address(0), "zero proof of human");
+        require(_passportVerifier != address(0), "zero passport verifier");
         
-        oneInchRouter = _oneInchRouter;
         pyusd = _pyusd;
         pyth = _pyth;
         stakingPool = _stakingPool;
-        proofOfHuman = _proofOfHuman;
+        proofOfHuman = _passportVerifier;
+        
+        // Request role in PassportVerifier
+        PassportVerifier(_passportVerifier).grantRole(
+            PassportVerifier(_passportVerifier).ESCROW_FACTORY_ROLE(),
+            address(this)
+        );
+    }
+
+    /// @notice Report a defaulting borrower
+    function reportDefaultingBorrower(address borrower) external {
+        require(authorizedEscrows[msg.sender], "Not an authorized escrow");
+        
+        // Report default to PassportVerifier
+        PassportVerifier(proofOfHuman).reportDefault(borrower);
+        
+        emit DefaultReported(borrower, msg.sender);
     }
 
     /// @notice Add supported token with price feed ID
     function addSupportedToken(address token, bytes32 priceId) external onlyOwner {
-        require(token != address(0) || priceId != bytes32(0), "invalid params");
+        require(token != address(0) && priceId != bytes32(0), "invalid params");
         tokenPriceIds[token] = priceId;
     }
 
@@ -81,24 +97,25 @@ contract FutureEscrowFactory is Ownable {
         uint256 lenderBalance = IStakingPool(stakingPool).availableBalance(msg.sender);
         require(lenderBalance >= pyusdAmount, "insufficient staked balance");
 
-        // Deploy a new FutureEscrow
+        // Deploy a new FutureEscrow (removed oneInchRouter)
         FutureEscrow escrow = new FutureEscrow(
-            msg.sender,        
+            msg.sender,        // lender
             tokenAddress,      
             tokenAmount,       
             pyusdAmount,       
             expireTime,        
             settlementTime,    
-            oneInchRouter,     
             pyusd,             
             pyth,              
             stakingPool,       
             proofOfHuman,      
+            address(this),     // factory
             priceId            
         );
 
         escrowAddress = address(escrow);
         escrows.push(escrowAddress);
+        authorizedEscrows[escrowAddress] = true;
 
         // Authorize escrow in staking pool
         IStakingPool(stakingPool).authorizeEscrow(escrowAddress);
@@ -106,10 +123,15 @@ contract FutureEscrowFactory is Ownable {
         emit EscrowCreated(escrowAddress, msg.sender, tokenAddress, tokenAmount, pyusdAmount, expireTime, settlementTime);
     }
 
-    /// @notice Get current PYUSD value of token amount - FIXED VERSION
+    /// @notice Get total escrows created
+    function getEscrowCount() external view returns (uint256) {
+        return escrows.length;
+    }
+
+    /// @notice Calculate token value in PYUSD using Pyth oracle
     function _getTokenValueInPyusd(
-        address, /* tokenAddress */
-        uint256 tokenAmount, 
+        address token, 
+        uint256 amount,
         bytes32 priceId
     ) internal view returns (uint256) {
         IPyth.Price memory priceData = IPyth(pyth).getPrice(priceId);
@@ -117,6 +139,10 @@ contract FutureEscrowFactory is Ownable {
         
         uint256 price = uint256(int256(priceData.price));
         int32 expo = priceData.expo;
+        
+        // Get token decimals (simplified)
+        uint8 tokenDecimals = 18;  // Default for most tokens
+        uint8 pyusdDecimals = 6;   // PYUSD decimals
         
         // Adjust price based on exponent
         uint256 priceAdjusted;
@@ -126,31 +152,7 @@ contract FutureEscrowFactory is Ownable {
             priceAdjusted = price / (10 ** uint32(-expo));
         }
         
-        // For ETH: tokenAmount = 1e18, price = 2000, result should be 2000 * 1e6
-        uint256 tokenDecimals = 18; // ETH decimals
-        uint256 pyusdDecimals = 6;  // PYUSD decimals
-        
-        return (tokenAmount * priceAdjusted * (10 ** pyusdDecimals)) / (10 ** tokenDecimals);
-    }
-
-    /// @notice Get number of escrows created via factory
-    function escrowsCount() external view returns (uint256) {
-        return escrows.length;
-    }
-
-    /// @notice Get all escrow addresses
-    function getAllEscrows() external view returns (address[] memory) {
-        return escrows;
-    }
-
-    /// @notice Get escrow details by index
-    function getEscrowByIndex(uint256 index) external view returns (address escrowAddress) {
-        require(index < escrows.length, "index out of bounds");
-        return escrows[index];
-    }
-
-    /// @notice Check if token is supported
-    function isTokenSupported(address token) external view returns (bool) {
-        return tokenPriceIds[token] != bytes32(0);
+        // Calculate PYUSD amount
+        return (amount * priceAdjusted * (10 ** pyusdDecimals)) / (10 ** tokenDecimals);
     }
 }

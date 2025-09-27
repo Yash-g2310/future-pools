@@ -19,15 +19,7 @@ interface IPyth {
     function getUpdateFee(bytes[] calldata updateData) external view returns (uint feeAmount);
 }
 
-/// 1inch Router Interface (simplified)
-interface IOneInchRouter {
-    function swap(
-        address srcToken,
-        uint256 amount,
-        uint256 minReturn,
-        bytes calldata data
-    ) external payable returns (uint256 returnAmount);
-}
+// Remove 1inch Router Interface - No longer needed
 
 /// Staking Pool Interface
 interface IStakingPool {
@@ -40,6 +32,11 @@ interface IStakingPool {
 /// Identity Verification Interface
 interface IProofOfHuman {
     function isVerified(address user) external view returns (bool);
+}
+
+/// Factory Interface for default reporting
+interface IFutureEscrowFactory {
+    function reportDefaultingBorrower(address borrower) external;
 }
 
 contract FutureEscrow is ReentrancyGuard {
@@ -55,12 +52,12 @@ contract FutureEscrow is ReentrancyGuard {
     uint64 public immutable expireTime;          // Time until borrower can accept
     uint64 public immutable settlementTime;     // Duration after borrow until settlement
 
-    // External Contracts
-    address public immutable oneInchRouter;      // 1inch Router v6
+    // External Contracts (removed oneInchRouter)
     address public immutable pyusd;             // PYUSD token address
     address public immutable pyth;              // Pyth oracle contract
     address public immutable stakingPool;       // Staking Pool contract
     address public immutable proofOfHuman;      // Identity verification contract
+    address public immutable factory;           // Factory that created this escrow
     bytes32 public immutable tokenPriceId;      // Token/USD Pyth price feed ID
 
     // State Variables
@@ -81,11 +78,11 @@ contract FutureEscrow is ReentrancyGuard {
         uint256 _pyusdAmount,
         uint64 _expireTime,
         uint64 _settlementTime,
-        address _oneInchRouter,
         address _pyusd,
         address _pyth,
         address _stakingPool,
         address _proofOfHuman,
+        address _factory,
         bytes32 _tokenPriceId
     ) {
         require(_lender != address(0) && _tokenAmount > 0 && _pyusdAmount > 0, "Invalid params");
@@ -96,11 +93,11 @@ contract FutureEscrow is ReentrancyGuard {
         pyusdAmount = _pyusdAmount;
         expireTime = _expireTime;
         settlementTime = _settlementTime;
-        oneInchRouter = _oneInchRouter;
         pyusd = _pyusd;
         pyth = _pyth;
         stakingPool = _stakingPool;
         proofOfHuman = _proofOfHuman;
+        factory = _factory;
         tokenPriceId = _tokenPriceId;
         
         state = State.OPEN;
@@ -140,49 +137,49 @@ contract FutureEscrow is ReentrancyGuard {
     function settle(bytes[] calldata priceUpdateData) external payable nonReentrant {
         require(state == State.BORROWED, "Not borrowed");
         require(block.timestamp >= borrowTime + settlementTime, "Too early");
-        
+
         // Update Pyth price feed
         uint256 fee = IPyth(pyth).getUpdateFee(priceUpdateData);
         require(msg.value >= fee, "Insufficient fee");
         IPyth(pyth).updatePriceFeeds{value: fee}(priceUpdateData);
-        
+
         // Get current token price from Pyth
         IPyth.Price memory priceData = IPyth(pyth).getPrice(tokenPriceId);
         require(priceData.price > 0, "Invalid price");
-        
+
         // Calculate current PYUSD value of the token amount
         uint256 currentTokenValue = _calculateTokenValueInPyusd(tokenAmount, priceData);
-        
+
         IERC20 pyusdToken = IERC20(pyusd);
-        
+
         // In futures: borrower pays currentTokenValue, lender receives currentTokenValue
         // Borrower has already paid borrowerCollateral
-        
+
         if (currentTokenValue <= borrowerCollateral) {
             // Case 1: Current value <= borrower's collateral
             // Borrower overpaid, gets refund
             uint256 refund = borrowerCollateral - currentTokenValue;
             pyusdToken.safeTransfer(borrower, refund);
-            
+
             // Lender gets current token value (from collateral)
             pyusdToken.safeTransfer(stakingPool, currentTokenValue);
             IStakingPool(stakingPool).repayToStake(lender, currentTokenValue);
-            
+
         } else {
             // Case 2: Current value > borrower's collateral  
             // Borrower needs to pay more, comes from lender's stake
             uint256 shortfall = currentTokenValue - borrowerCollateral;
-            
+
             // All collateral goes to lender
             pyusdToken.safeTransfer(stakingPool, borrowerCollateral);
-            
+
             // Lender gets: borrowerCollateral + (original_stake - shortfall)
             // Which equals: borrowerCollateral + pyusdAmount - shortfall = currentTokenValue
             IStakingPool(stakingPool).repayToStake(lender, currentTokenValue);
         }
-        
+
         state = State.COMPLETED;
-        
+
         // Determine who benefited
         if (currentTokenValue < pyusdAmount) {
             emit Settled(borrower, pyusdAmount - currentTokenValue, false); // Borrower saved money
@@ -191,11 +188,29 @@ contract FutureEscrow is ReentrancyGuard {
         } else {
             emit Settled(address(0), 0, false); // Exact same value
         }
-        
+
         // Refund excess ETH sent for price update
         if (msg.value > fee) {
             payable(msg.sender).transfer(msg.value - fee);
         }
+    }
+
+    /// @notice Handle case when borrower defaults and doesn't settle
+    function handleDefault() external {
+        require(state == State.BORROWED, "Not in borrowed state");
+        require(block.timestamp >= borrowTime + settlementTime + 7 days, "Too early"); // 7 day grace period
+        
+        // Report defaulting borrower
+        IFutureEscrowFactory(factory).reportDefaultingBorrower(borrower);
+        
+        // Handle collateral - send to lender's stake
+        IERC20(pyusd).safeTransfer(stakingPool, borrowerCollateral);
+        IStakingPool(stakingPool).repayToStake(lender, borrowerCollateral);
+        
+        // Mark as defaulted
+        state = State.DEFAULTED;
+        
+        emit DefaultHandled(borrower, pyusdAmount);
     }
 
     /// @dev Calculate PYUSD value of token amount using Pyth price - FIXED VERSION

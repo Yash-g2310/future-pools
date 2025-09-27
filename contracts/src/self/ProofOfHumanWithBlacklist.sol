@@ -12,26 +12,47 @@ contract ProofOfHumanWithBlacklist is SelfVerificationRoot {
     bytes32 public verificationConfigId;
 
     mapping(bytes32 => bool) public blacklistedPassports;
+    
+    // Bridge address that can listen to events
+    address public bridgeOperator;
 
-    event VerificationSucceeded(uint256 indexed userIdentifier, uint256 indexed nullifier);
-    event BlacklistedPassportBlocked(bytes32 indexed hashedPassportNumber, uint256 indexed userIdentifier, uint256 indexed nullifier);
+    // Enhanced event to include user address and passport hash
+    event VerificationSucceeded(
+        uint256 indexed userIdentifier, 
+        uint256 indexed nullifier,
+        address user,
+        bytes32 hashedPassport
+    );
+    
+    event BlacklistedPassportBlocked(
+        bytes32 indexed hashedPassportNumber, 
+        uint256 indexed userIdentifier, 
+        uint256 indexed nullifier
+    );
+    
+    event PassportBlacklisted(bytes32 indexed hashedPassport);
+    event PassportUnblacklisted(bytes32 indexed hashedPassport);
 
     constructor(
         address identityVerificationHubV2Address,
         string memory scopeSeed,
-        SelfUtils.UnformattedVerificationConfigV2 memory _verificationConfig
+        SelfUtils.UnformattedVerificationConfigV2 memory _verificationConfig,
+        address _bridgeOperator
     ) SelfVerificationRoot(identityVerificationHubV2Address, scopeSeed) {
         verificationConfig = SelfUtils.formatVerificationConfigV2(_verificationConfig);
         verificationConfigId = IIdentityVerificationHubV2(identityVerificationHubV2Address)
             .setVerificationConfigV2(verificationConfig);
+        bridgeOperator = _bridgeOperator;
     }
 
-    function addBlacklistedPassport(bytes32 hashedPassport) external /* onlyOwner */ {
+    function addBlacklistedPassport(bytes32 hashedPassport) external {
         blacklistedPassports[hashedPassport] = true;
+        emit PassportBlacklisted(hashedPassport);
     }
 
-    function removeBlacklistedPassport(bytes32 hashedPassport) external /* onlyOwner */ {
+    function removeBlacklistedPassport(bytes32 hashedPassport) external {
         blacklistedPassports[hashedPassport] = false;
+        emit PassportUnblacklisted(hashedPassport);
     }
 
     function getConfigId(
@@ -54,8 +75,12 @@ contract ProofOfHumanWithBlacklist is SelfVerificationRoot {
                 emit BlacklistedPassportBlocked(hashedPassport, output.userIdentifier, output.nullifier);
                 revert("Passport number is blacklisted");
             }
+            
+            // Emit enhanced event with user address and passport hash
+            emit VerificationSucceeded(output.userIdentifier, output.nullifier, msg.sender, hashedPassport);
+        } else {
+            // No passport info, just emit basic event
+            emit VerificationSucceeded(output.userIdentifier, output.nullifier, msg.sender, bytes32(0));
         }
-
-        emit VerificationSucceeded(output.userIdentifier, output.nullifier);
     }
 }
