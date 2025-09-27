@@ -4,19 +4,24 @@ import { useAccount, useDisconnect } from 'wagmi';
 import { useState, useEffect } from 'react';
 import { countries, SelfQRcodeWrapper } from '@selfxyz/qrcode';
 import { SelfAppBuilder } from '@selfxyz/qrcode';
+import { useRouter } from 'next/navigation';
 
 interface QRVerificationPageProps {
   onVerificationComplete?: () => void;
+  onVerificationError?: () => void;
   onBackToWallet?: () => void;
 }
 
 export default function QRVerificationPage({ 
   onVerificationComplete, 
-  onBackToWallet 
+  onBackToWallet,
+  onVerificationError
 }: QRVerificationPageProps) {
   const { address, isConnected } = useAccount();
   const { disconnect } = useDisconnect();
   const [selfApp, setSelfApp] = useState<any | null>(null);
+  const [verificationStatus, setVerificationStatus] = useState<'pending' | 'success' | 'error'>('pending');
+  const router = useRouter();
 
   // Initialize Self Protocol
   useEffect(() => {
@@ -25,7 +30,7 @@ export default function QRVerificationPage({
         version: 2,
         appName: process.env.NEXT_PUBLIC_SELF_APP_NAME || 'Futures Pool',
         scope: process.env.NEXT_PUBLIC_SELF_SCOPE || 'human-blacklist-scope',
-        endpoint: process.env.NEXT_PUBLIC_SELF_ENDPOINT || '0x3e2aa34c333474e3692abfb7a3f97a44173d0401' ,
+        endpoint: process.env.NEXT_PUBLIC_SELF_ENDPOINT || '0x3e2aa34c333474e3692abfb7a3f97a44173d0401',
         logoBase64: 'https://i.postimg.cc/mrmVf9hm/self.png',
         userId: address,
         endpointType: 'staging_celo',
@@ -45,17 +50,45 @@ export default function QRVerificationPage({
     }
   }, [isConnected, address]);
 
+  // Auto-redirect to dashboard on successful verification
+  useEffect(() => {
+    if (verificationStatus === 'success') {
+      // Store verification status
+      localStorage.setItem('user_verified', 'true');
+      
+      // Small delay to ensure localStorage is set before navigation
+      const timer = setTimeout(() => {
+        onVerificationComplete?.();
+      }, 500);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [verificationStatus, onVerificationComplete]);
+
   const handleVerificationSuccess = () => {
-    onVerificationComplete?.();
+    console.log('Verification successful!');
+    setVerificationStatus('success');
   };
 
   const handleVerificationError = () => {
     console.error('Verification failed');
+    setVerificationStatus('error');
+    onVerificationError?.();
   };
 
   const handleDisconnect = () => {
+    // Clear verification status
+    localStorage.removeItem('user_verified');
+    // Disconnect wallet
     disconnect();
+    // Return to wallet connect page
     onBackToWallet?.();
+  };
+
+  // Handle manual navigation to dashboard after verification
+  const handleContinueToDashboard = () => {
+    localStorage.setItem('user_verified', 'true');
+    onVerificationComplete?.();
   };
 
   if (!isConnected || !address) {
@@ -103,36 +136,58 @@ export default function QRVerificationPage({
 
           {/* QR Code Section */}
           <div className="text-center">
-            <h2 className="text-xl font-semibold mb-4">Scan QR Code for Verification</h2>
-            
-            {!selfApp ? (
+            {verificationStatus === 'success' ? (
               <div className="flex flex-col items-center space-y-4">
-                <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600"></div>
-                <p className="text-gray-600">Initializing verification...</p>
+                <div className="bg-green-100 text-green-700 p-4 rounded-lg flex items-center">
+                  <span className="text-2xl mr-2">✓</span>
+                  <div>
+                    <h3 className="font-bold">Verification Successful</h3>
+                    <p>Your passport has been verified</p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleContinueToDashboard}
+                  className="bg-blue-600 hover:bg-blue-700 text-white py-2 px-6 rounded-lg transition-colors"
+                >
+                  Continue to Dashboard
+                </button>
               </div>
             ) : (
-              <div className="space-y-4">
-                <SelfQRcodeWrapper
-                  selfApp={selfApp}
-                  onSuccess={handleVerificationSuccess}
-                  onError={handleVerificationError}
-                />
-                <p className="text-sm text-gray-600">
-                  Use your mobile device to scan this QR code for passport verification
-                </p>
-              </div>
+              <>
+                <h2 className="text-xl font-semibold mb-4">Scan QR Code for Verification</h2>
+                
+                {!selfApp ? (
+                  <div className="flex flex-col items-center space-y-4">
+                    <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600"></div>
+                    <p className="text-gray-600">Initializing verification...</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <SelfQRcodeWrapper
+                      selfApp={selfApp}
+                      onSuccess={handleVerificationSuccess}
+                      onError={handleVerificationError}
+                    />
+                    <p className="text-sm text-gray-600">
+                      Use your mobile device to scan this QR code for passport verification
+                    </p>
+                  </div>
+                )}
+              </>
             )}
           </div>
 
           {/* Action Buttons */}
-          <div className="flex space-x-4">
-            <button
-              onClick={onBackToWallet}
-              className="flex-1 bg-gray-600 text-white py-2 px-4 rounded-lg hover:bg-gray-700 transition-colors"
-            >
-              Back to Wallet
-            </button>
-          </div>
+          {verificationStatus !== 'success' && (
+            <div className="flex space-x-4">
+              <button
+                onClick={onBackToWallet}
+                className="flex-1 bg-gray-600 text-white py-2 px-4 rounded-lg hover:bg-gray-700 transition-colors"
+              >
+                Back to Wallet
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

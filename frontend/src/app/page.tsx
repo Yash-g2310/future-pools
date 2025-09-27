@@ -2,14 +2,16 @@
 
 import { useState } from 'react';
 import { useAccount } from 'wagmi';
+import { useRouter } from 'next/navigation';
 import WalletConnectPage from './pages/components/WalletConnectPage';
 import QRVerificationPage from './pages/components/QRVerificationPage';
 
-type AppPage = 'wallet-connect' | 'qr-verification' | 'next-step';
+type AppPage = 'wallet-connect' | 'qr-verification';
 
 export default function Home() {
   const [currentPage, setCurrentPage] = useState<AppPage>('wallet-connect');
   const { isConnected } = useAccount();
+  const router = useRouter();
 
   const handleWalletConnected = () => {
     setCurrentPage('qr-verification');
@@ -19,8 +21,21 @@ export default function Home() {
     setCurrentPage('wallet-connect');
   };
 
+  // Updated to redirect to dashboard instead of showing "Start Over" page
   const handleVerificationComplete = () => {
-    setCurrentPage('next-step');
+    console.log("Verification successful, navigating to dashboard");
+    // Store verification status in localStorage
+    localStorage.setItem('user_verified', 'true');
+    // Navigate to dashboard
+    router.push('/dashboard');
+  };
+
+  const handleVerificationError = () => {
+    console.error("Verification failed");
+    // Clear any verification state
+    localStorage.removeItem('user_verified');
+    // Go back to wallet connect
+    setCurrentPage('wallet-connect');
   };
 
   const renderCurrentPage = () => {
@@ -33,26 +48,8 @@ export default function Home() {
           <QRVerificationPage 
             onVerificationComplete={handleVerificationComplete}
             onBackToWallet={handleBackToWallet}
+            onVerificationError={handleVerificationError}
           />
-        );
-      
-      case 'next-step':
-        return (
-          <div className="flex flex-col items-center justify-center h-screen bg-gray-50">
-            <div className="bg-white p-8 rounded-lg shadow-lg max-w-md w-full text-center">
-              <h1 className="text-3xl font-bold mb-6">Verification Complete!</h1>
-              <p className="text-gray-600 mb-6">
-                Your passport has been successfully verified. 
-                You can now proceed with the next steps in your application flow.
-              </p>
-              <button
-                onClick={handleBackToWallet}
-                className="bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                Start Over
-              </button>
-            </div>
-          </div>
         );
       
       default:
