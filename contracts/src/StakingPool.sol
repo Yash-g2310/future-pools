@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-import "../lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
-import "../lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
-import "../lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 contract StakingPool is ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -104,11 +104,11 @@ contract StakingPool is ReentrancyGuard {
         // Get the amount that was originally locked for this user
         uint256 originalLocked = lockedBalance[user];
         require(originalLocked > 0, "No locked balance to repay");
-        
+
         // Unlock the original locked amount
         lockedBalance[user] -= originalLocked;
         totalLocked -= originalLocked;
-        
+
         // Update staked balance to the new amount (could be more or less than original)
         if (amount >= originalLocked) {
             // Lender gained money
@@ -121,7 +121,7 @@ contract StakingPool is ReentrancyGuard {
             stakedBalance[user] -= loss;
             totalStaked -= loss;
         }
-        
+
         emit Repaid(user, amount, msg.sender);
     }
 
