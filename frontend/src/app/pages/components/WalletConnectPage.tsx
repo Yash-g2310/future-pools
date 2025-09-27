@@ -18,20 +18,69 @@ interface WalletDisplayProps {
 const ConnectedWalletDisplay = ({ address, chainId, onDisconnect }: WalletDisplayProps) => (
   <div className="flex flex-col items-center justify-center h-screen bg-gray-50">
     <div className="bg-white p-8 rounded-lg shadow-lg max-w-md w-full space-y-4">
+      {/* Blue connected wallet section with disconnect button */}
+      <div className="flex flex-col gap-2">
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex justify-between items-center">
+            <div>
+              <p className="text-blue-800 font-medium">Connected Wallet</p>
+              <p className="text-blue-600 text-sm mt-1">
+                {address ? `${address.slice(0, 6)}...${address.slice(-4)}` : ''}
+              </p>
+            </div>
+            <button
+              onClick={onDisconnect}
+              className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-md text-sm 
+                       transition-colors duration-200 flex items-center gap-1"
+            >
+              <span>Disconnect</span>
+              <span className="text-xs">×</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Existing green status section */}
       <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-        <p className="text-green-800 font-medium">Wallet Connected!</p>
-        <p className="text-green-600 text-sm mt-1">
-          Address: {address?.slice(0, 6)}...{address?.slice(-4)}
-        </p>
+        <div className="flex justify-between items-center">
+          <p className="text-green-800 font-medium">Wallet Connected!</p>
+          <button 
+            className="text-green-600 hover:text-green-800 text-sm font-medium"
+            onClick={() => window.open(`https://etherscan.io/address/${address}`, '_blank')}
+          >
+            View on Etherscan ↗
+          </button>
+        </div>
+        <div className="flex items-center justify-between mt-2">
+          <p className="text-green-600 text-sm">
+            Address: {address?.slice(0, 6)}...{address?.slice(-4)}
+          </p>
+          <button 
+            className="text-blue-600 hover:text-blue-800 text-sm"
+            onClick={() => navigator.clipboard.writeText(address || '')}
+          >
+            Copy 📋
+          </button>
+        </div>
         <p className="text-green-600 text-xs mt-1">Chain ID: {chainId}</p>
       </div>
-      <button
-        onClick={onDisconnect}
-        className="w-full bg-red-600 text-white py-3 px-4 rounded-lg 
-                 hover:bg-red-700 transition-colors font-medium"
-      >
-        Disconnect Wallet
-      </button>
+      
+      <div className="space-y-2">
+        <button
+          onClick={onDisconnect}
+          className="w-full bg-red-600 text-white py-3 px-4 rounded-lg 
+                   hover:bg-red-700 transition-colors font-medium"
+        >
+          Disconnect Wallet
+        </button>
+        <button
+          onClick={() => window.location.reload()}
+          className="w-full bg-gray-200 text-gray-800 py-3 px-4 rounded-lg 
+                   hover:bg-gray-300 transition-colors font-medium"
+        >
+          Refresh Connection
+        </button>
+      </div>
     </div>
   </div>
 );

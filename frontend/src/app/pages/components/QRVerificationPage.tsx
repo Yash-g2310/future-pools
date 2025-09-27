@@ -1,6 +1,6 @@
 'use client';
 
-import { useAccount } from 'wagmi';
+import { useAccount, useDisconnect } from 'wagmi';
 import { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 
@@ -14,6 +14,7 @@ export default function QRVerificationPage({
   onBackToWallet 
 }: QRVerificationPageProps) {
   const { address, isConnected } = useAccount();
+  const { disconnect } = useDisconnect(); // Add this hook
   const [qrCodeData, setQrCodeData] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState(true);
   const [verificationStatus, setVerificationStatus] = useState<'pending' | 'scanning' | 'verified' | 'failed'>('pending');
@@ -47,6 +48,12 @@ export default function QRVerificationPage({
     onBackToWallet?.();
   };
 
+  // Add the disconnect handler
+  const handleDisconnect = () => {
+    disconnect();
+    onBackToWallet?.();
+  };
+
   // Redirect to wallet connect if not connected
   if (!isConnected || !address) {
     return (
@@ -73,10 +80,22 @@ export default function QRVerificationPage({
         <div className="space-y-6">
           {/* Connected Wallet Info */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <p className="text-blue-800 font-medium">Connected Wallet</p>
-            <p className="text-blue-600 text-sm mt-1">
-              {address.slice(0, 6)}...{address.slice(-4)}
-            </p>
+            <div className="flex justify-between items-center">
+              <div>
+                <p className="text-blue-800 font-medium">Connected Wallet</p>
+                <p className="text-blue-600 text-sm mt-1">
+                  {address.slice(0, 6)}...{address.slice(-4)}
+                </p>
+              </div>
+              <button
+                onClick={handleDisconnect}
+                className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-md text-sm 
+                         transition-colors duration-200 flex items-center gap-1"
+              >
+                <span>Disconnect</span>
+                <span className="text-xs">×</span>
+              </button>
+            </div>
           </div>
 
           {/* QR Code Section */}
