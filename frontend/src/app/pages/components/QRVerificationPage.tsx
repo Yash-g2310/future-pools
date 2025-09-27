@@ -25,7 +25,7 @@ export default function QRVerificationPage({
         version: 2,
         appName: process.env.NEXT_PUBLIC_SELF_APP_NAME || 'Futures Pool',
         scope: process.env.NEXT_PUBLIC_SELF_SCOPE || 'human-blacklist-scope',
-        endpoint: process.env.NEXT_PUBLIC_SELF_ENDPOINT ,
+        endpoint: process.env.NEXT_PUBLIC_SELF_ENDPOINT || '0x3e2aa34c333474e3692abfb7a3f97a44173d0401' ,
         logoBase64: 'https://i.postimg.cc/mrmVf9hm/self.png',
         userId: address,
         endpointType: 'staging_celo',
