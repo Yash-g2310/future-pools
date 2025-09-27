@@ -103,7 +103,7 @@ print_success "Contract compilation successful!"
 export IDENTITY_VERIFICATION_HUB_ADDRESS
 
 # Deploy contract
-print_info "Deploying ProofOfHuman contract with placeholder scope..."
+print_info "Deploying ProofOfHumanWithBlacklistContract contract with placeholder scope..."
 
 DEPLOY_CMD="forge script ./DeployProofOfHumanWithBlacklist.s.sol:DeployProofOfHumanWithBlacklist --rpc-url $RPC_URL --private-key $PRIVATE_KEY --broadcast"
 
