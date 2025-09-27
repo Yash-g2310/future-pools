@@ -1,72 +1,277 @@
-import { createConfig, http } from '@wagmi/core';
-import { mainnet, sepolia, localhost } from 'wagmi/chains';
+import { createConfig, http } from 'wagmi';
+import { mainnet, base, sepolia } from 'wagmi/chains';
+import { metaMask, injected } from 'wagmi/connectors';
 
-export const config = createConfig({
-  chains: [mainnet, sepolia],
-  ssr: true,
+export const wagmiConfig = createConfig({
+  chains: [mainnet, base, sepolia],
+  connectors: [
+    injected(),
+    metaMask(),
+  ],
   transports: {
-    [sepolia.id]: http('https://sepolia.example.com'),
-    [mainnet.id]: http('https://mainnet.example.com'),
+    [mainnet.id]: http(),
+    [base.id]: http(),
+    [sepolia.id]: http(),
   },
-});
+})
 
-// Contract addresses for different chains
 export const CONTRACT_ADDRESSES = {
   [mainnet.id]: process.env.NEXT_PUBLIC_VERIFICATION_CONTRACT_MAINNET || '',
+  [base.id]: process.env.NEXT_PUBLIC_VERIFICATION_CONTRACT_SEPOLIA || '',
   [sepolia.id]: process.env.NEXT_PUBLIC_VERIFICATION_CONTRACT_SEPOLIA || '',
-  [localhost.id]: process.env.NEXT_PUBLIC_VERIFICATION_CONTRACT_LOCAL || '',
 } as const;
 
 // Contract ABI for verification storage
 export const VERIFICATION_CONTRACT_ABI = [
   {
+    "type": "constructor",
     "inputs": [
-      { "internalType": "address", "name": "user", "type": "address" },
-      { "internalType": "bool", "name": "isOver18", "type": "bool" },
-      { "internalType": "bool", "name": "hasUniqueIdentity", "type": "bool" },
-      { "internalType": "string", "name": "passportHash", "type": "string" },
-      { "internalType": "uint256", "name": "timestamp", "type": "uint256" }
+      {
+        "name": "identityVerificationHubV2Address",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "scopeSeed",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "_verificationConfig",
+        "type": "tuple",
+        "internalType": "struct SelfUtils.UnformattedVerificationConfigV2",
+        "components": [
+          {
+            "name": "olderThan",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "forbiddenCountries",
+            "type": "string[]",
+            "internalType": "string[]"
+          },
+          {
+            "name": "ofacEnabled",
+            "type": "bool",
+            "internalType": "bool"
+          }
+        ]
+      }
     ],
-    "name": "storeVerification",
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "addBlacklistedPassport",
+    "inputs": [
+      {
+        "name": "hashedPassport",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
     "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
+    "stateMutability": "nonpayable"
   },
   {
+    "type": "function",
+    "name": "blacklistedPassports",
     "inputs": [
-      { "internalType": "address", "name": "user", "type": "address" }
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
     ],
-    "name": "getVerification",
     "outputs": [
-      { "internalType": "bool", "name": "isOver18", "type": "bool" },
-      { "internalType": "bool", "name": "hasUniqueIdentity", "type": "bool" },
-      { "internalType": "string", "name": "passportHash", "type": "string" },
-      { "internalType": "uint256", "name": "timestamp", "type": "uint256" }
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
     ],
-    "stateMutability": "view",
-    "type": "function"
+    "stateMutability": "view"
   },
   {
+    "type": "function",
+    "name": "getConfigId",
     "inputs": [
-      { "internalType": "address", "name": "user", "type": "address" }
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
     ],
-    "name": "isVerified",
     "outputs": [
-      { "internalType": "bool", "name": "", "type": "bool" }
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
     ],
-    "stateMutability": "view",
-    "type": "function"
+    "stateMutability": "view"
   },
   {
-    "anonymous": false,
+    "type": "function",
+    "name": "onVerificationSuccess",
     "inputs": [
-      { "indexed": true, "internalType": "address", "name": "user", "type": "address" },
-      { "indexed": false, "internalType": "bool", "name": "isOver18", "type": "bool" },
-      { "indexed": false, "internalType": "bool", "name": "hasUniqueIdentity", "type": "bool" },
-      { "indexed": false, "internalType": "string", "name": "passportHash", "type": "string" },
-      { "indexed": false, "internalType": "uint256", "name": "timestamp", "type": "uint256" }
+      {
+        "name": "output",
+        "type": "bytes",
+        "internalType": "bytes"
+      },
+      {
+        "name": "userData",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
     ],
-    "name": "VerificationStored",
-    "type": "event"
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "removeBlacklistedPassport",
+    "inputs": [
+      {
+        "name": "hashedPassport",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "scope",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "verificationConfig",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "olderThanEnabled",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "olderThan",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "forbiddenCountriesEnabled",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "verificationConfigId",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "verifySelfProof",
+    "inputs": [
+      {
+        "name": "proofPayload",
+        "type": "bytes",
+        "internalType": "bytes"
+      },
+      {
+        "name": "userContextData",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "event",
+    "name": "BlacklistedPassportBlocked",
+    "inputs": [
+      {
+        "name": "hashedPassportNumber",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "userIdentifier",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "nullifier",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "VerificationSucceeded",
+    "inputs": [
+      {
+        "name": "userIdentifier",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "nullifier",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "InvalidDataFormat",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "UnauthorizedCaller",
+    "inputs": []
   }
 ] as const;
