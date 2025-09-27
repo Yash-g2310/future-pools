@@ -3,9 +3,10 @@ import { mainnet, sepolia, localhost } from 'wagmi/chains';
 
 export const config = createConfig({
   chains: [mainnet, sepolia],
+  ssr: true,
   transports: {
-    [mainnet.id]: http('https://mainnet.example.com'),
     [sepolia.id]: http('https://sepolia.example.com'),
+    [mainnet.id]: http('https://mainnet.example.com'),
   },
 });
 
