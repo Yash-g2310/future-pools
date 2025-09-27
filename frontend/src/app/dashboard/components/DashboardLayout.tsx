@@ -4,7 +4,6 @@ import React, { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAccount, useDisconnect } from 'wagmi';
 import DashboardHeader from './DashboardHeader';
-import DashboardSidebar from './DashboardSidebar';
 
 const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isConnected } = useAccount();
@@ -41,14 +40,11 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ children }) 
   }
 
   return (
-    <div className="flex min-h-screen">
-      <DashboardSidebar />
-      <div className="flex-1">
-        <DashboardHeader />
-        <main className="p-4">
-          {children}
-        </main>
-      </div>
+    <div className="min-h-screen">
+      <DashboardHeader />
+      <main>
+        {children}
+      </main>
     </div>
   );
 };
