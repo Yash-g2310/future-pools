@@ -7,73 +7,140 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 
 import "./FutureEscrow.sol";
 
+/// Pyth Price Feed Interface
+interface IPyth {
+    struct Price {
+        int64 price;
+        uint64 conf;
+        int32 expo;
+        uint publishTime;
+    }
+    function getPrice(bytes32 id) external view returns (Price memory price);
+}
+
+/// Staking Pool Interface  
+interface IStakingPool {
+    function availableBalance(address user) external view returns (uint256);
+    function authorizeEscrow(address escrow) external;
+}
+
 contract FutureEscrowFactory is Ownable {
     using SafeERC20 for IERC20;
 
     event EscrowCreated(
         address indexed escrow, 
         address indexed lender, 
-        uint256 ethAmount, 
+        address tokenAddress,
+        uint256 tokenAmount, 
+        uint256 pyusdAmount,
         uint64 expireTime, 
         uint64 settlementTime
     );
 
     // Immutable contract addresses
-    address public immutable oneInchRouter;  // 1inch Router v6
-    address public immutable pyusd;          // PYUSD token address
-    address public immutable pyth;           // Pyth oracle contract
-    bytes32 public immutable ethPriceId;     // ETH/USD Pyth price feed ID
+    address public immutable oneInchRouter;      
+    address public immutable pyusd;             
+    address public immutable pyth;              
+    address public immutable stakingPool;       
+    address public immutable proofOfHuman;      
 
+    // Supported token price feeds
+    mapping(address => bytes32) public tokenPriceIds;
+    
     address[] public escrows;
 
-    // NOTE: call Ownable(msg.sender) to set the factory owner to the deployer.
     constructor(
         address _oneInchRouter,
         address _pyusd,
         address _pyth,
-        bytes32 _ethPriceId
+        address _stakingPool,
+        address _proofOfHuman
     ) Ownable(msg.sender) {
         require(_oneInchRouter != address(0), "zero router");
         require(_pyusd != address(0), "zero pyusd");
         require(_pyth != address(0), "zero pyth");
-        require(_ethPriceId != bytes32(0), "zero price id");
+        require(_stakingPool != address(0), "zero staking pool");
+        require(_proofOfHuman != address(0), "zero proof of human");
         
         oneInchRouter = _oneInchRouter;
         pyusd = _pyusd;
         pyth = _pyth;
-        ethPriceId = _ethPriceId;
+        stakingPool = _stakingPool;
+        proofOfHuman = _proofOfHuman;
     }
 
-    /// @notice Create a new ETH future escrow and deposit lender's ETH into it
-    /// @param ethAmount Amount of ETH lender wants to deposit
-    /// @param expireTime Timestamp until which borrower can accept the offer
-    /// @param settlementTime Duration (in seconds) after borrow until settlement
+    /// @notice Add supported token with price feed ID
+    function addSupportedToken(address token, bytes32 priceId) external onlyOwner {
+        require(token != address(0) || priceId != bytes32(0), "invalid params");
+        tokenPriceIds[token] = priceId;
+    }
+
+    /// @notice Create a new future escrow for token lending
     function createEscrow(
-        uint256 ethAmount,
+        address tokenAddress,
+        uint256 tokenAmount,
         uint64 expireTime,
         uint64 settlementTime
-    ) external payable returns (address escrowAddress) {
-        require(ethAmount > 0, "zero amount");
-        require(msg.value == ethAmount, "ETH amount mismatch");
-        require(expireTime >= block.timestamp, "bad expire time");
+    ) external returns (address escrowAddress) {
+        require(tokenAmount > 0, "zero amount");
+        require(expireTime > block.timestamp, "bad expire time");
         require(settlementTime > 0, "bad settlement duration");
+        
+        // Check if token is supported
+        bytes32 priceId = tokenPriceIds[tokenAddress];
+        require(priceId != bytes32(0), "unsupported token");
+        
+        // Get current token price and convert to PYUSD amount
+        uint256 pyusdAmount = _getTokenValueInPyusd(tokenAddress, tokenAmount, priceId);
+        require(pyusdAmount > 0, "invalid conversion");
+        
+        // Check lender has enough staked PYUSD
+        uint256 lenderBalance = IStakingPool(stakingPool).availableBalance(msg.sender);
+        require(lenderBalance >= pyusdAmount, "insufficient staked balance");
 
-        // Deploy a new FutureEscrow with ETH deposit
-        FutureEscrow escrow = new FutureEscrow{value: ethAmount}(
-            msg.sender,        // lender
-            ethAmount,         // ETH amount
-            expireTime,        // expire time
-            settlementTime,    // settlement duration (pass duration, not absolute timestamp)
-            oneInchRouter,     // 1inch router
-            pyusd,             // PYUSD token
-            pyth,              // Pyth oracle
-            ethPriceId         // ETH price feed ID
+        // Deploy a new FutureEscrow
+        FutureEscrow escrow = new FutureEscrow(
+            msg.sender,        
+            tokenAddress,      
+            tokenAmount,       
+            pyusdAmount,       
+            expireTime,        
+            settlementTime,    
+            oneInchRouter,     
+            pyusd,             
+            pyth,              
+            stakingPool,       
+            proofOfHuman,      
+            priceId            
         );
 
         escrowAddress = address(escrow);
         escrows.push(escrowAddress);
 
-        emit EscrowCreated(escrowAddress, msg.sender, ethAmount, expireTime, settlementTime);
+        // Authorize escrow in staking pool (FIXED)
+        IStakingPool(stakingPool).authorizeEscrow(escrowAddress);
+
+        emit EscrowCreated(escrowAddress, msg.sender, tokenAddress, tokenAmount, pyusdAmount, expireTime, settlementTime);
+    }
+
+    /// @notice Get current PYUSD value of token amount
+    function _getTokenValueInPyusd(
+        address tokenAddress, 
+        uint256 tokenAmount, 
+        bytes32 priceId
+    ) internal view returns (uint256) {
+        IPyth.Price memory priceData = IPyth(pyth).getPrice(priceId);
+        require(priceData.price > 0, "Invalid price");
+        
+        uint256 price = uint256(int256(priceData.price));
+        int32 expo = priceData.expo;
+        
+        // Simplified conversion (assumes 18 decimals for tokens, 6 for PYUSD)
+        if (expo >= 0) {
+            return (tokenAmount * price * (10 ** uint32(expo))) / 1e18 / 1e12;
+        } else {
+            return (tokenAmount * price) / (10 ** uint32(-expo)) / 1e18 / 1e12;
+        }
     }
 
     /// @notice Get number of escrows created via factory
@@ -90,5 +157,10 @@ contract FutureEscrowFactory is Ownable {
     function getEscrowByIndex(uint256 index) external view returns (address escrowAddress) {
         require(index < escrows.length, "index out of bounds");
         return escrows[index];
+    }
+
+    /// @notice Check if token is supported
+    function isTokenSupported(address token) external view returns (bool) {
+        return tokenPriceIds[token] != bytes32(0);
     }
 }

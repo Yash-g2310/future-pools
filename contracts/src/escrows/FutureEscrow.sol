@@ -29,6 +29,18 @@ interface IOneInchRouter {
     ) external payable returns (uint256 returnAmount);
 }
 
+/// Staking Pool Interface
+interface IStakingPool {
+    function borrowFromStake(address user, uint256 amount) external;
+    function repayToStake(address user, uint256 amount) external;
+    function availableBalance(address user) external view returns (uint256);
+}
+
+/// Identity Verification Interface
+interface IProofOfHuman {
+    function isVerified(address user) external view returns (bool);
+}
+
 contract FutureEscrow is ReentrancyGuard {
     using SafeERC20 for IERC20;
 
@@ -36,7 +48,9 @@ contract FutureEscrow is ReentrancyGuard {
 
     // Contract Configuration
     address public immutable lender;
-    uint256 public immutable ethAmount;           // ETH amount lender deposits
+    address public immutable tokenAddress;       // Token type lender specified
+    uint256 public immutable tokenAmount;        // Token amount lender specified
+    uint256 public immutable pyusdAmount;        // PYUSD amount (converted from token at creation)
     uint64 public immutable expireTime;          // Time until borrower can accept
     uint64 public immutable settlementTime;     // Duration after borrow until settlement
 
@@ -44,130 +58,141 @@ contract FutureEscrow is ReentrancyGuard {
     address public immutable oneInchRouter;      // 1inch Router v6
     address public immutable pyusd;             // PYUSD token address
     address public immutable pyth;              // Pyth oracle contract
-    bytes32 public immutable ethPriceId;        // ETH/USD Pyth price feed ID
+    address public immutable stakingPool;       // Staking Pool contract
+    address public immutable proofOfHuman;      // Identity verification contract
+    bytes32 public immutable tokenPriceId;      // Token/USD Pyth price feed ID
 
     // State Variables
     State public state;
     address public borrower;
     uint64 public borrowTime;                    // When borrow() was called
-    uint256 public pyusdGivenToBorrower;        // PYUSD amount given to borrower (now half of swap)
-    uint256 public borrowerCollateral;          // PYUSD collateral from borrower
+    uint256 public borrowerCollateral;          // PYUSD collateral from borrower (50% of loan)
 
     // Events
     event Borrowed(address indexed borrower, uint256 pyusdReceived, uint256 collateralPosted);
     event Settled(address indexed winner, uint256 amount, bool lenderWon);
+    event DefaultHandled(address indexed defaulter, uint256 lostAmount);
 
     constructor(
         address _lender,
-        uint256 __ethAmount,
+        address _tokenAddress,
+        uint256 _tokenAmount,
+        uint256 _pyusdAmount,
         uint64 _expireTime,
         uint64 _settlementTime,
         address _oneInchRouter,
         address _pyusd,
         address _pyth,
-        bytes32 _ethPriceId
-    ) payable {
-        require(_lender != address(0) && __ethAmount > 0, "Invalid params");
-        require(msg.value == __ethAmount, "Must deposit ETH amount");
+        address _stakingPool,
+        address _proofOfHuman,
+        bytes32 _tokenPriceId
+    ) {
+        require(_lender != address(0) && _tokenAmount > 0 && _pyusdAmount > 0, "Invalid params");
         
         lender = _lender;
-        ethAmount = __ethAmount;
+        tokenAddress = _tokenAddress;
+        tokenAmount = _tokenAmount;
+        pyusdAmount = _pyusdAmount;
         expireTime = _expireTime;
         settlementTime = _settlementTime;
         oneInchRouter = _oneInchRouter;
         pyusd = _pyusd;
         pyth = _pyth;
-        ethPriceId = _ethPriceId;
+        stakingPool = _stakingPool;
+        proofOfHuman = _proofOfHuman;
+        tokenPriceId = _tokenPriceId;
         
         state = State.OPEN;
     }
 
     /// @notice Borrower accepts the offer by posting collateral and receiving PYUSD
-    /// @param oneInchCalldata Calldata for 1inch to swap ETH -> PYUSD
-    /// @param minPyusdOut Minimum PYUSD expected from swap
-    function borrow(
-        bytes calldata oneInchCalldata,
-        uint256 minPyusdOut
-    ) external payable nonReentrant {
+    /// @param collateralAmount PYUSD collateral amount (must be 50% of loan)
+    function borrow(uint256 collateralAmount) external nonReentrant {
         require(state == State.OPEN, "Not open");
         require(block.timestamp <= expireTime, "Offer expired");
+        require(IProofOfHuman(proofOfHuman).isVerified(msg.sender), "Not verified");
         
-        // 1. Swap lender's ETH to PYUSD using 1inch
-        uint256 pyusdReceived = _swapEthToPyusd(ethAmount, oneInchCalldata, minPyusdOut);
+        // Require exactly 50% collateral
+        uint256 requiredCollateral = pyusdAmount / 2;
+        require(collateralAmount == requiredCollateral, "Invalid collateral amount");
         
-        // 2. Calculate required borrower collateral (half of PYUSD value)
-        uint256 requiredCollateral = pyusdReceived / 2;
-        require(requiredCollateral > 0, "Invalid collateral");
+        // Transfer borrower's PYUSD collateral to contract
+        IERC20(pyusd).safeTransferFrom(msg.sender, address(this), collateralAmount);
         
-        // 3. Transfer borrower's PYUSD collateral to contract (must have approved)
-        IERC20(pyusd).safeTransferFrom(msg.sender, address(this), requiredCollateral);
+        // Borrow PYUSD from lender's staked balance
+        IStakingPool(stakingPool).borrowFromStake(lender, pyusdAmount);
         
-        // 4. Give half of PYUSD to borrower, keep the other half in contract as escrow
-        uint256 pyusdToBorrower = pyusdReceived / 2;
-        IERC20(pyusd).safeTransfer(msg.sender, pyusdToBorrower);
+        // Transfer PYUSD to borrower
+        IERC20(pyusd).safeTransfer(msg.sender, pyusdAmount);
         
-        // 5. Update state
+        // Update state
         borrower = msg.sender;
         borrowTime = uint64(block.timestamp);
-        pyusdGivenToBorrower = pyusdToBorrower;
-        borrowerCollateral = requiredCollateral;
+        borrowerCollateral = collateralAmount;
         state = State.BORROWED;
         
-        emit Borrowed(msg.sender, pyusdToBorrower, requiredCollateral);
+        emit Borrowed(msg.sender, pyusdAmount, collateralAmount);
     }
 
-    /// @notice Settle the future contract using current ETH price
+    /// @notice Settle the future contract using current token price
     /// @param priceUpdateData Pyth price update data
     function settle(bytes[] calldata priceUpdateData) external payable nonReentrant {
         require(state == State.BORROWED, "Not borrowed");
         require(block.timestamp >= borrowTime + settlementTime, "Too early");
         
-        // 1. Update Pyth price feed
+        // Update Pyth price feed
         uint256 fee = IPyth(pyth).getUpdateFee(priceUpdateData);
         require(msg.value >= fee, "Insufficient fee");
         IPyth(pyth).updatePriceFeeds{value: fee}(priceUpdateData);
         
-        // 2. Get current ETH price from Pyth
-        IPyth.Price memory priceData = IPyth(pyth).getPrice(ethPriceId);
+        // Get current token price from Pyth
+        IPyth.Price memory priceData = IPyth(pyth).getPrice(tokenPriceId);
         require(priceData.price > 0, "Invalid price");
         
-        // 3. Calculate current PYUSD value of original ETH
-        uint256 currentEthValueInPyusd = _calculateEthValueInPyusd(ethAmount, priceData);
+        // Calculate current PYUSD value of original token amount
+        uint256 currentTokenValueInPyusd = _calculateTokenValueInPyusd(tokenAmount, priceData);
         
         IERC20 pyusdToken = IERC20(pyusd);
-        uint256 totalAvailable = pyusdToken.balanceOf(address(this)); // Remaining PYUSD in contract
         
-        // 4. Determine settlement outcome
-        if (currentEthValueInPyusd <= pyusdGivenToBorrower) {
-            // Borrower wins: ETH value decreased, borrower keeps what they got
-            // Transfer all remaining PYUSD to borrower
-            if (totalAvailable > 0) {
-                pyusdToken.safeTransfer(borrower, totalAvailable);
-            }
-            state = State.COMPLETED;
-            emit Settled(borrower, totalAvailable, false);
-        } else {
-            // Lender wins: ETH value increased
-            uint256 owedToLender = currentEthValueInPyusd - pyusdGivenToBorrower;
+        // Determine settlement outcome
+        if (currentTokenValueInPyusd <= pyusdAmount) {
+            // Borrower wins: token value decreased or stayed same
+            // Return borrower's collateral
+            pyusdToken.safeTransfer(borrower, borrowerCollateral);
             
-            if (totalAvailable >= owedToLender) {
-                // Borrower can cover the difference (using contract PYUSD)
-                pyusdToken.safeTransfer(lender, owedToLender);
+            // Repay original amount to lender's stake
+            IStakingPool(stakingPool).repayToStake(lender, pyusdAmount);
+            
+            state = State.COMPLETED;
+            emit Settled(borrower, borrowerCollateral, false);
+        } else {
+            // Lender wins: token value increased
+            uint256 profit = currentTokenValueInPyusd - pyusdAmount;
+            uint256 totalOwed = pyusdAmount + profit;
+            
+            if (borrowerCollateral >= profit) {
+                // Borrower can cover the profit from collateral
+                uint256 profitPayment = profit > borrowerCollateral ? borrowerCollateral : profit;
+                uint256 remainingCollateral = borrowerCollateral - profitPayment;
                 
-                // Refund remaining to borrower
-                uint256 remaining = totalAvailable - owedToLender;
-                if (remaining > 0) {
-                    pyusdToken.safeTransfer(borrower, remaining);
+                // Repay to lender's stake (principal + profit)
+                IStakingPool(stakingPool).repayToStake(lender, pyusdAmount + profitPayment);
+                
+                // Return remaining collateral to borrower
+                if (remainingCollateral > 0) {
+                    pyusdToken.safeTransfer(borrower, remainingCollateral);
                 }
+                
                 state = State.COMPLETED;
-                emit Settled(lender, owedToLender, true);
+                emit Settled(lender, profitPayment, true);
             } else {
-                // Borrower defaults: give all remaining to lender
-                if (totalAvailable > 0) {
-                    pyusdToken.safeTransfer(lender, totalAvailable);
-                }
+                // Borrower defaults: can't cover the profit
+                // Give all collateral to lender
+                IStakingPool(stakingPool).repayToStake(lender, pyusdAmount + borrowerCollateral);
+                
                 state = State.DEFAULTED;
-                emit Settled(lender, totalAvailable, true);
+                emit Settled(lender, borrowerCollateral, true);
+                emit DefaultHandled(borrower, profit - borrowerCollateral);
             }
         }
         
@@ -177,49 +202,53 @@ contract FutureEscrow is ReentrancyGuard {
         }
     }
 
-    /// @dev Swap ETH to PYUSD using 1inch
-    function _swapEthToPyusd(
-        uint256 ethAmountIn,
-        bytes calldata oneInchCalldata,
-        uint256 minPyusdOut
-    ) internal returns (uint256 pyusdReceived) {
-        uint256 pyusdBefore = IERC20(pyusd).balanceOf(address(this));
-        
-        // Call 1inch router to swap ETH -> PYUSD
-        (bool success, ) = oneInchRouter.call{value: ethAmountIn}(oneInchCalldata);
-        require(success, "1inch swap failed");
-        
-        uint256 pyusdAfter = IERC20(pyusd).balanceOf(address(this));
-        pyusdReceived = pyusdAfter - pyusdBefore;
-        require(pyusdReceived >= minPyusdOut, "Insufficient output");
-        
-        return pyusdReceived;
-    }
-
-    /// @dev Calculate PYUSD value of ETH amount using Pyth price
-    function _calculateEthValueInPyusd(
-        uint256 _ethAmount,
+    /// @dev Calculate PYUSD value of token amount using Pyth price
+    function _calculateTokenValueInPyusd(
+        uint256 _tokenAmount,
         IPyth.Price memory priceData
-    ) internal pure returns (uint256) {
-        // Pyth price is in format: price * 10^expo
-        // ETH has 18 decimals, PYUSD has 6 decimals
-        
+    ) internal view returns (uint256) {
         uint256 price = uint256(int256(priceData.price));
         int32 expo = priceData.expo;
         
-        // Convert ETH (18 decimals) to PYUSD (6 decimals) using price
+        // Get token decimals (assume 18 for ETH, 6 for USDC, etc.)
+        uint8 tokenDecimals = _getTokenDecimals();
+        uint8 pyusdDecimals = 6; // PYUSD has 6 decimals
+        
+        // Convert token amount to PYUSD using price
         if (expo >= 0) {
-            return ( _ethAmount * price * (10 ** uint32(expo)) ) / 1e18 / 1e12; // Adjust for PYUSD decimals
+            return (_tokenAmount * price * (10 ** uint32(expo))) / (10 ** tokenDecimals) * (10 ** pyusdDecimals) / (10 ** 18);
         } else {
-            return ( _ethAmount * price ) / (10 ** uint32(-expo)) / 1e18 / 1e12;
+            return (_tokenAmount * price) / (10 ** uint32(-expo)) / (10 ** tokenDecimals) * (10 ** pyusdDecimals) / (10 ** 18);
         }
     }
 
-    // View functions
-    function getContractBalance() external view returns (uint256 ethBalance, uint256 pyusdBalance) {
-        return (address(this).balance, IERC20(pyusd).balanceOf(address(this)));
+    /// @dev Get token decimals (simplified)
+    function _getTokenDecimals() internal view returns (uint8) {
+        if (tokenAddress == address(0)) return 18; // ETH
+        // For other tokens, you'd call token.decimals() if available
+        return 18; // Default assumption
     }
 
-    // Fallback to receive ETH
+    // View functions
+    function getContractInfo() external view returns (
+        State currentState,
+        address currentBorrower,
+        uint256 collateralAmount,
+        uint64 remainingTime
+    ) {
+        currentState = state;
+        currentBorrower = borrower;
+        collateralAmount = borrowerCollateral;
+        
+        if (state == State.OPEN && block.timestamp < expireTime) {
+            remainingTime = expireTime - uint64(block.timestamp);
+        } else if (state == State.BORROWED && block.timestamp < borrowTime + settlementTime) {
+            remainingTime = (borrowTime + settlementTime) - uint64(block.timestamp);
+        } else {
+            remainingTime = 0;
+        }
+    }
+
+    // Emergency function to handle ETH payments
     receive() external payable {}
 }
