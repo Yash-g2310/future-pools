@@ -52,10 +52,10 @@ contract FutureEscrowFactory is Ownable {
         proofOfHuman = _passportVerifier;
         
         // Request role in PassportVerifier
-        PassportVerifier(_passportVerifier).grantRole(
-            PassportVerifier(_passportVerifier).ESCROW_FACTORY_ROLE(),
-            address(this)
-        );
+        // PassportVerifier(_passportVerifier).grantRole(
+        //     PassportVerifier(_passportVerifier).ESCROW_FACTORY_ROLE(),
+        //     address(this)
+        // );
     }
 
     /// @notice Report a defaulting borrower

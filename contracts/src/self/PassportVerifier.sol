@@ -31,6 +31,11 @@ contract PassportVerifier is AccessControl {
             _grantRole(ESCROW_FACTORY_ROLE, escrowFactory);
         }
     }
+
+    function setEscrowFactory(address escrowFactory) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(escrowFactory != address(0), "Zero address");
+        _grantRole(ESCROW_FACTORY_ROLE, escrowFactory);
+    }
     
     /// @notice Register verification from Celo chain using bridge signature
     function verifyWithSignature(
