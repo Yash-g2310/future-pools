@@ -7,23 +7,6 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 
 import "./FutureEscrow.sol";
 
-/// Pyth Price Feed Interface
-interface IPyth {
-    struct Price {
-        int64 price;
-        uint64 conf;
-        int32 expo;
-        uint publishTime;
-    }
-    function getPrice(bytes32 id) external view returns (Price memory price);
-}
-
-/// Staking Pool Interface  
-interface IStakingPool {
-    function availableBalance(address user) external view returns (uint256);
-    function authorizeEscrow(address escrow) external;
-}
-
 contract FutureEscrowFactory is Ownable {
     using SafeERC20 for IERC20;
 
@@ -117,15 +100,15 @@ contract FutureEscrowFactory is Ownable {
         escrowAddress = address(escrow);
         escrows.push(escrowAddress);
 
-        // Authorize escrow in staking pool (FIXED)
+        // Authorize escrow in staking pool
         IStakingPool(stakingPool).authorizeEscrow(escrowAddress);
 
         emit EscrowCreated(escrowAddress, msg.sender, tokenAddress, tokenAmount, pyusdAmount, expireTime, settlementTime);
     }
 
-    /// @notice Get current PYUSD value of token amount
+    /// @notice Get current PYUSD value of token amount - FIXED VERSION
     function _getTokenValueInPyusd(
-        address tokenAddress, 
+        address, /* tokenAddress */
         uint256 tokenAmount, 
         bytes32 priceId
     ) internal view returns (uint256) {
@@ -135,12 +118,19 @@ contract FutureEscrowFactory is Ownable {
         uint256 price = uint256(int256(priceData.price));
         int32 expo = priceData.expo;
         
-        // Simplified conversion (assumes 18 decimals for tokens, 6 for PYUSD)
+        // Adjust price based on exponent
+        uint256 priceAdjusted;
         if (expo >= 0) {
-            return (tokenAmount * price * (10 ** uint32(expo))) / 1e18 / 1e12;
+            priceAdjusted = price * (10 ** uint32(expo));
         } else {
-            return (tokenAmount * price) / (10 ** uint32(-expo)) / 1e18 / 1e12;
+            priceAdjusted = price / (10 ** uint32(-expo));
         }
+        
+        // For ETH: tokenAmount = 1e18, price = 2000, result should be 2000 * 1e6
+        uint256 tokenDecimals = 18; // ETH decimals
+        uint256 pyusdDecimals = 6;  // PYUSD decimals
+        
+        return (tokenAmount * priceAdjusted * (10 ** pyusdDecimals)) / (10 ** tokenDecimals);
     }
 
     /// @notice Get number of escrows created via factory

@@ -14,7 +14,7 @@ NC='\033[0m' # No Color
 
 # Print colored output
 print_info() { echo -e "${BLUE}ℹ️  $1${NC}"; }
-print_success() { echo -e "${GREEN}✅ $1${NC}"; }
+print_success() { echo -e "${GREEN} $1${NC}"; }
 print_warning() { echo -e "${YELLOW}⚠️  $1${NC}"; }
 print_error() { echo -e "${RED}❌ $1${NC}"; }
 
@@ -196,12 +196,12 @@ if [ -n "$SCOPE_VALUE" ]; then
     echo "| Scope Value | $SCOPE_VALUE |"
 fi
 echo
-print_success "✅ Deployment Complete"
+print_success " Deployment Complete"
 if [ -n "$SCOPE_SEED" ]; then
-    echo "1. ✅ Contract deployed with placeholder scope"
-    echo "2. ✅ Actual scope calculated from deployed address + scope seed"
-    echo "3. ✅ Scope value set on deployed contract automatically"
+    echo "1.  Contract deployed with placeholder scope"
+    echo "2.  Actual scope calculated from deployed address + scope seed"
+    echo "3.  Scope value set on deployed contract automatically"
 else
-    echo "1. ✅ Contract deployed with placeholder scope"
+    echo "1.  Contract deployed with placeholder scope"
     echo "2. ⚠️  Scope calculation skipped (no SCOPE_SEED provided)"
 fi

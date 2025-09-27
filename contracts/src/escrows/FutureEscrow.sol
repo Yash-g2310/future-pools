@@ -34,6 +34,7 @@ interface IStakingPool {
     function borrowFromStake(address user, uint256 amount) external;
     function repayToStake(address user, uint256 amount) external;
     function availableBalance(address user) external view returns (uint256);
+    function authorizeEscrow(address escrow) external;
 }
 
 /// Identity Verification Interface
@@ -149,51 +150,46 @@ contract FutureEscrow is ReentrancyGuard {
         IPyth.Price memory priceData = IPyth(pyth).getPrice(tokenPriceId);
         require(priceData.price > 0, "Invalid price");
         
-        // Calculate current PYUSD value of original token amount
-        uint256 currentTokenValueInPyusd = _calculateTokenValueInPyusd(tokenAmount, priceData);
+        // Calculate current PYUSD value of the token amount
+        uint256 currentTokenValue = _calculateTokenValueInPyusd(tokenAmount, priceData);
         
         IERC20 pyusdToken = IERC20(pyusd);
         
-        // Determine settlement outcome
-        if (currentTokenValueInPyusd <= pyusdAmount) {
-            // Borrower wins: token value decreased or stayed same
-            // Return borrower's collateral
-            pyusdToken.safeTransfer(borrower, borrowerCollateral);
+        // In futures: borrower pays currentTokenValue, lender receives currentTokenValue
+        // Borrower has already paid borrowerCollateral
+        
+        if (currentTokenValue <= borrowerCollateral) {
+            // Case 1: Current value <= borrower's collateral
+            // Borrower overpaid, gets refund
+            uint256 refund = borrowerCollateral - currentTokenValue;
+            pyusdToken.safeTransfer(borrower, refund);
             
-            // Repay original amount to lender's stake
-            IStakingPool(stakingPool).repayToStake(lender, pyusdAmount);
+            // Lender gets current token value (from collateral)
+            pyusdToken.safeTransfer(stakingPool, currentTokenValue);
+            IStakingPool(stakingPool).repayToStake(lender, currentTokenValue);
             
-            state = State.COMPLETED;
-            emit Settled(borrower, borrowerCollateral, false);
         } else {
-            // Lender wins: token value increased
-            uint256 profit = currentTokenValueInPyusd - pyusdAmount;
-            uint256 totalOwed = pyusdAmount + profit;
+            // Case 2: Current value > borrower's collateral  
+            // Borrower needs to pay more, comes from lender's stake
+            uint256 shortfall = currentTokenValue - borrowerCollateral;
             
-            if (borrowerCollateral >= profit) {
-                // Borrower can cover the profit from collateral
-                uint256 profitPayment = profit > borrowerCollateral ? borrowerCollateral : profit;
-                uint256 remainingCollateral = borrowerCollateral - profitPayment;
-                
-                // Repay to lender's stake (principal + profit)
-                IStakingPool(stakingPool).repayToStake(lender, pyusdAmount + profitPayment);
-                
-                // Return remaining collateral to borrower
-                if (remainingCollateral > 0) {
-                    pyusdToken.safeTransfer(borrower, remainingCollateral);
-                }
-                
-                state = State.COMPLETED;
-                emit Settled(lender, profitPayment, true);
-            } else {
-                // Borrower defaults: can't cover the profit
-                // Give all collateral to lender
-                IStakingPool(stakingPool).repayToStake(lender, pyusdAmount + borrowerCollateral);
-                
-                state = State.DEFAULTED;
-                emit Settled(lender, borrowerCollateral, true);
-                emit DefaultHandled(borrower, profit - borrowerCollateral);
-            }
+            // All collateral goes to lender
+            pyusdToken.safeTransfer(stakingPool, borrowerCollateral);
+            
+            // Lender gets: borrowerCollateral + (original_stake - shortfall)
+            // Which equals: borrowerCollateral + pyusdAmount - shortfall = currentTokenValue
+            IStakingPool(stakingPool).repayToStake(lender, currentTokenValue);
+        }
+        
+        state = State.COMPLETED;
+        
+        // Determine who benefited
+        if (currentTokenValue < pyusdAmount) {
+            emit Settled(borrower, pyusdAmount - currentTokenValue, false); // Borrower saved money
+        } else if (currentTokenValue > pyusdAmount) {
+            emit Settled(lender, currentTokenValue - pyusdAmount, true);    // Lender got more
+        } else {
+            emit Settled(address(0), 0, false); // Exact same value
         }
         
         // Refund excess ETH sent for price update
@@ -202,7 +198,7 @@ contract FutureEscrow is ReentrancyGuard {
         }
     }
 
-    /// @dev Calculate PYUSD value of token amount using Pyth price
+    /// @dev Calculate PYUSD value of token amount using Pyth price - FIXED VERSION
     function _calculateTokenValueInPyusd(
         uint256 _tokenAmount,
         IPyth.Price memory priceData
@@ -214,12 +210,16 @@ contract FutureEscrow is ReentrancyGuard {
         uint8 tokenDecimals = _getTokenDecimals();
         uint8 pyusdDecimals = 6; // PYUSD has 6 decimals
         
-        // Convert token amount to PYUSD using price
+        // Adjust price based on exponent
+        uint256 priceAdjusted;
         if (expo >= 0) {
-            return (_tokenAmount * price * (10 ** uint32(expo))) / (10 ** tokenDecimals) * (10 ** pyusdDecimals) / (10 ** 18);
+            priceAdjusted = price * (10 ** uint32(expo));
         } else {
-            return (_tokenAmount * price) / (10 ** uint32(-expo)) / (10 ** tokenDecimals) * (10 ** pyusdDecimals) / (10 ** 18);
+            priceAdjusted = price / (10 ** uint32(-expo));
         }
+        
+        // Convert token amount to PYUSD value
+        return (_tokenAmount * priceAdjusted * (10 ** pyusdDecimals)) / (10 ** tokenDecimals);
     }
 
     /// @dev Get token decimals (simplified)

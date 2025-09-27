@@ -4,47 +4,65 @@ pragma solidity ^0.8.19;
 import "../lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import "../lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 import "../lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
-import "../lib/openzeppelin-contracts/contracts/access/Ownable.sol";
 
-/// @title StakingPool - PYUSD Staking Pool for Future Pools Platform
-contract StakingPool is ReentrancyGuard, Ownable {
+contract StakingPool is ReentrancyGuard {
     using SafeERC20 for IERC20;
 
-    // Events
-    event Staked(address indexed user, uint256 amount);
-    event Unstaked(address indexed user, uint256 amount);
-    event Borrowed(address indexed escrow, address indexed user, uint256 amount);
-    event Repaid(address indexed escrow, address indexed user, uint256 amount);
-    event FactorySet(address indexed factory);
-    event EscrowAuthorized(address indexed escrow);
-
-    // State variables
     IERC20 public immutable pyusd;
-    
+    address public factory;
+
     // User balances
     mapping(address => uint256) public stakedBalance;
-    mapping(address => uint256) public lockedBalance; // Locked in active escrows
-    
+    mapping(address => uint256) public lockedBalance;
+
     // Authorized escrow contracts
     mapping(address => bool) public authorizedEscrows;
-    
-    // Total staked and locked
+
+    // Global totals
     uint256 public totalStaked;
     uint256 public totalLocked;
 
-    // Add factory management
-    address public factory;
+    event Staked(address indexed user, uint256 amount);
+    event Unstaked(address indexed user, uint256 amount);
+    event Borrowed(address indexed user, uint256 amount, address indexed escrow);
+    event Repaid(address indexed user, uint256 amount, address indexed escrow);
 
-    constructor(address _pyusd) Ownable(msg.sender) {
+    modifier onlyFactory() {
+        require(msg.sender == factory, "Only factory");
+        _;
+    }
+
+    modifier onlyAuthorizedEscrow() {
+        require(authorizedEscrows[msg.sender], "Not authorized escrow");
+        _;
+    }
+
+    constructor(address _pyusd) {
         require(_pyusd != address(0), "Invalid PYUSD address");
         pyusd = IERC20(_pyusd);
+    }
+
+    /// @notice Set factory contract (only once)
+    function setFactory(address _factory) external {
+        require(factory == address(0), "Factory already set");
+        require(_factory != address(0), "Invalid factory");
+        factory = _factory;
+    }
+
+    /// @notice Authorize an escrow contract to borrow/repay
+    function authorizeEscrow(address escrow) external onlyFactory {
+        require(escrow != address(0), "Invalid escrow");
+        authorizedEscrows[escrow] = true;
     }
 
     /// @notice Stake PYUSD tokens
     function stake(uint256 amount) external nonReentrant {
         require(amount > 0, "Amount must be > 0");
         
+        // Transfer PYUSD from user to this contract
         pyusd.safeTransferFrom(msg.sender, address(this), amount);
+        
+        // Update balances
         stakedBalance[msg.sender] += amount;
         totalStaked += amount;
         
@@ -55,88 +73,64 @@ contract StakingPool is ReentrancyGuard, Ownable {
     function unstake(uint256 amount) external nonReentrant {
         require(amount > 0, "Amount must be > 0");
         require(stakedBalance[msg.sender] >= amount, "Insufficient staked balance");
-        require(availableBalance(msg.sender) >= amount, "Amount locked in escrows");
+        require(availableBalance(msg.sender) >= amount, "Insufficient available balance");
         
+        // Update balances
         stakedBalance[msg.sender] -= amount;
         totalStaked -= amount;
+        
+        // Transfer PYUSD back to user
         pyusd.safeTransfer(msg.sender, amount);
         
         emit Unstaked(msg.sender, amount);
     }
 
-    /// @notice Borrow PYUSD from user's staked balance (called by escrow)
-    /// @param user User to borrow from  
-    /// @param amount Amount to borrow
-    function borrowFromStake(address user, uint256 amount) external nonReentrant {
-        require(authorizedEscrows[msg.sender], "Not authorized escrow");
+    /// @notice Borrow from user's staked balance (called by authorized escrow)
+    function borrowFromStake(address user, uint256 amount) external onlyAuthorizedEscrow {
         require(availableBalance(user) >= amount, "Insufficient available balance");
         
-        // Lock the borrowed amount
+        // Lock the amount for this user
         lockedBalance[user] += amount;
         totalLocked += amount;
         
-        // Transfer PYUSD to the calling escrow contract
+        // Transfer PYUSD to the calling escrow
         pyusd.safeTransfer(msg.sender, amount);
         
-        emit Borrowed(msg.sender, user, amount);
+        emit Borrowed(user, amount, msg.sender);
     }
 
-    /// @notice Repay PYUSD to user's staked balance (called by escrow)
-    /// @param user User to repay to
-    /// @param amount Amount to repay (including any profits)
-    function repayToStake(address user, uint256 amount) external nonReentrant {
-        require(authorizedEscrows[msg.sender], "Not authorized escrow");
-        require(amount > 0, "Amount must be > 0");
+    /// @notice Repay to user's staked balance (called by authorized escrow) - SIMPLIFIED
+    function repayToStake(address user, uint256 amount) external onlyAuthorizedEscrow {
+        // Get the amount that was originally locked for this user
+        uint256 originalLocked = lockedBalance[user];
+        require(originalLocked > 0, "No locked balance to repay");
         
-        // Receive PYUSD from the calling escrow contract
-        pyusd.safeTransferFrom(msg.sender, address(this), amount);
+        // Unlock the original locked amount
+        lockedBalance[user] -= originalLocked;
+        totalLocked -= originalLocked;
         
-        // Unlock the original borrowed amount
-        uint256 originalBorrowed = lockedBalance[user];
-        lockedBalance[user] = 0; // Unlock all
-        totalLocked -= originalBorrowed;
+        // Update staked balance to the new amount (could be more or less than original)
+        if (amount >= originalLocked) {
+            // Lender gained money
+            uint256 profit = amount - originalLocked;
+            stakedBalance[user] += profit;
+            totalStaked += profit;
+        } else {
+            // Lender lost money  
+            uint256 loss = originalLocked - amount;
+            stakedBalance[user] -= loss;
+            totalStaked -= loss;
+        }
         
-        // Add the repaid amount to user's staked balance
-        stakedBalance[user] += amount;
-        totalStaked += amount;
-        
-        emit Repaid(msg.sender, user, amount);
+        emit Repaid(user, amount, msg.sender);
     }
 
-    /// @notice Set the factory address (only owner)
-    function setFactory(address _factory) external onlyOwner {
-        require(_factory != address(0), "Invalid factory address");
-        factory = _factory;
-        emit FactorySet(_factory);
-    }
-
-    /// @notice Modified authorize function to allow factory
-    function authorizeEscrow(address escrow) external {
-        require(
-            msg.sender == owner() || msg.sender == factory, 
-            "Only owner or factory can authorize"
-        );
-        require(escrow != address(0), "Invalid escrow address");
-        authorizedEscrows[escrow] = true;
-        emit EscrowAuthorized(escrow);
-    }
-
-    /// @notice Revoke escrow authorization
-    function revokeEscrow(address escrow) external onlyOwner {
-        authorizedEscrows[escrow] = false;
-    }
-
-    /// @notice Get available balance for user (staked - locked)
+    // View functions
     function availableBalance(address user) public view returns (uint256) {
         return stakedBalance[user] - lockedBalance[user];
     }
 
-    /// @notice Get user's complete balance info
-    function getUserBalance(address user) external view returns (
-        uint256 staked,
-        uint256 locked,
-        uint256 available
-    ) {
+    function getUserBalance(address user) external view returns (uint256 staked, uint256 locked, uint256 available) {
         staked = stakedBalance[user];
         locked = lockedBalance[user];
         available = availableBalance(user);
