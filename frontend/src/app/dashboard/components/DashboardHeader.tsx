@@ -38,9 +38,9 @@ const DashboardHeader = () => {
       <nav className="hidden md:flex items-center space-x-2">
         {[
           { name: 'DISCOVER', href: '/dashboard' },
-          { name: 'BUILD', href: '/dashboard/pools' },
-          { name: 'USE', href: '/dashboard/history' },
-          { name: 'JOIN', href: '/dashboard/analytics' },
+          { name: 'STAKE', href: '/dashboard/stake' },
+          { name: 'LEND', href: '/dashboard/lend' },
+          { name: 'BORROW', href: '/dashboard/borrow' },
         ].map((item) => (
           <Link 
             key={item.name} 
