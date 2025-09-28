@@ -200,7 +200,7 @@ const ConnectedWalletDisplay = ({ address, chainId, onDisconnect }: WalletDispla
       
       {/* Header */}
       <div className="absolute top-6 left-6">
-        <h1 className="text-2xl font-bold font-pixel text-cyan-300">DEFI LENDING</h1>
+        <h1 className="text-2xl font-bold font-pixel text-cyan-300">FUTURE POOLS</h1>
       </div>
       
       <div className="absolute top-6 right-6">
@@ -222,7 +222,7 @@ const ConnectedWalletDisplay = ({ address, chainId, onDisconnect }: WalletDispla
         
         <div className="text-center mb-8 max-w-2xl">
           <p className="text-lg text-gray-300 font-pixel">
-            Your wallet is connected to our DeFi lending platform with <span className="text-yellow-400">PYUSD</span> support.
+            Your wallet is connected to our DeFi lending and staking platform with <span className="text-yellow-400">PYUSD</span> support.
           </p>
           <p className="text-lg text-gray-300 mt-2 font-pixel">
             Ready to start lending or borrowing with smart escrow contracts.
@@ -370,7 +370,7 @@ export default function WalletConnectPage({ onWalletConnected }: WalletConnectPa
         
         {/* Header */}
         <div className="absolute top-6 left-6 z-20">
-          <h1 className="text-2xl font-bold font-pixel text-cyan-300">DEFI LENDING</h1>
+          <h1 className="text-2xl font-bold font-pixel text-cyan-300">FUTURE POOLS</h1>
         </div>
         
         <div className="absolute top-6 right-6 z-20">
@@ -384,7 +384,7 @@ export default function WalletConnectPage({ onWalletConnected }: WalletConnectPa
           <AnimatedCoinLogo />
           
           <h2 className="text-4xl md:text-6xl font-bold text-center mb-6 max-w-4xl leading-tight font-vt323 text-cyan-200">
-            Access Your DeFi Lending Platform!
+            Access Your DeFi Lending and Staking Platform!
           </h2>
           
           <div className="text-center mb-8 max-w-2xl">
