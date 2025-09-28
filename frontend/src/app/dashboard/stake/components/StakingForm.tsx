@@ -2,31 +2,46 @@
 
 import React, { useState } from 'react';
 import { useAccount } from 'wagmi';
+import { useStakingPool } from '../../../hooks/useStakingPool';
+import { toast } from 'react-hot-toast'; // Install this package if not already
 
 export default function StakingForm() {
   const [amount, setAmount] = useState<string>('');
   const [isStaking, setIsStaking] = useState<boolean>(true); // true = stake, false = unstake
   const { address } = useAccount();
-  
-  // Mock balances - would come from contract in real implementation
-  const availableBalance = 1000;
-  const stakedBalance = 500;
+  const { balances, stake, unstake, isStaking: isStakingLoading, isUnstaking } = useStakingPool();
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!amount) return;
+    if (!amount || !address) return;
     
     try {
-      console.log(`${isStaking ? 'Staking' : 'Unstaking'} ${amount} PYUSD`);
-      // Implementation would call the contract function here
-      // For staking: stakingContract.stake(amount)
-      // For unstaking: stakingContract.unstake(amount)
+      const loadingToast = toast.loading(
+        `${isStaking ? 'Staking' : 'Unstaking'} ${amount} PYUSD...`
+      );
+      
+      if (isStaking) {
+        const success = await stake(amount);
+        if (success) {
+          toast.success(`Successfully staked ${amount} PYUSD`, { id: loadingToast });
+        } else {
+          toast.error('Transaction failed', { id: loadingToast });
+        }
+      } else {
+        const success = await unstake(amount);
+        if (success) {
+          toast.success(`Successfully unstaked ${amount} PYUSD`, { id: loadingToast });
+        } else {
+          toast.error('Transaction failed', { id: loadingToast });
+        }
+      }
       
       // Reset form after successful transaction
       setAmount('');
     } catch (error) {
       console.error('Transaction failed:', error);
+      toast.error('Transaction failed');
     }
   };
   
@@ -38,6 +53,7 @@ export default function StakingForm() {
         {/* Toggle between stake/unstake */}
         <div className="flex bg-gray-700 rounded-lg p-1">
           <button
+            type="button"
             className={`px-4 py-1.5 text-sm rounded-md transition-all ${
               isStaking 
                 ? 'bg-blue-500 text-white' 
@@ -48,6 +64,7 @@ export default function StakingForm() {
             Stake
           </button>
           <button
+            type="button"
             className={`px-4 py-1.5 text-sm rounded-md transition-all ${
               !isStaking 
                 ? 'bg-blue-500 text-white' 
@@ -82,12 +99,12 @@ export default function StakingForm() {
           
           <div className="flex justify-between mt-2 text-sm text-gray-400">
             <span>
-              {isStaking ? 'Available:' : 'Staked:'} {isStaking ? availableBalance : stakedBalance} PYUSD
+              {isStaking ? 'Available:' : 'Staked:'} {isStaking ? balances.pyusdBalance.toFixed(2) : balances.stakedBalance.toFixed(2)} PYUSD
             </span>
             <button 
               type="button"
               className="text-blue-400 hover:text-blue-300"
-              onClick={() => setAmount(isStaking ? availableBalance.toString() : stakedBalance.toString())}
+              onClick={() => setAmount(isStaking ? balances.pyusdBalance.toString() : balances.availableBalance.toString())}
             >
               MAX
             </button>
@@ -97,16 +114,20 @@ export default function StakingForm() {
         {/* Balance Info */}
         <div className="bg-gray-700/50 rounded-lg p-4 space-y-2">
           <div className="flex justify-between text-sm">
-            <span className="text-gray-400">Available Balance:</span>
-            <span className="text-white font-medium">{availableBalance} PYUSD</span>
+            <span className="text-gray-400">PYUSD Balance:</span>
+            <span className="text-white font-medium">{balances.pyusdBalance.toFixed(2)} PYUSD</span>
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-gray-400">Staked Balance:</span>
-            <span className="text-white font-medium">{stakedBalance} PYUSD</span>
+            <span className="text-white font-medium">{balances.stakedBalance.toFixed(2)} PYUSD</span>
           </div>
           <div className="flex justify-between text-sm">
-            <span className="text-gray-400">Total Balance:</span>
-            <span className="text-white font-medium">{availableBalance + stakedBalance} PYUSD</span>
+            <span className="text-gray-400">Locked Balance:</span>
+            <span className="text-white font-medium">{balances.lockedBalance.toFixed(2)} PYUSD</span>
+          </div>
+          <div className="flex justify-between text-sm">
+            <span className="text-gray-400">Available for Unstake:</span>
+            <span className="text-white font-medium">{balances.availableBalance.toFixed(2)} PYUSD</span>
           </div>
         </div>
         
@@ -114,9 +135,19 @@ export default function StakingForm() {
         <button
           type="submit"
           className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-lg font-medium transition-colors"
-          disabled={!amount || Number(amount) <= 0}
+        //   disabled={
+        //     !amount || 
+        //     Number(amount) <= 0 || 
+        //     isStakingLoading || 
+        //     isUnstaking || 
+        //     (isStaking ? Number(amount) > balances.pyusdBalance : Number(amount) > balances.availableBalance)
+        //   }
         >
-          {isStaking ? 'Stake PYUSD' : 'Unstake PYUSD'}
+          {isStakingLoading || isUnstaking ? (
+            <span>Processing...</span>
+          ) : (
+            <span>{isStaking ? 'Stake PYUSD' : 'Unstake PYUSD'}</span>
+          )}
         </button>
       </form>
     </div>
