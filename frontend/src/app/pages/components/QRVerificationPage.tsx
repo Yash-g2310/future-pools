@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import { countries, SelfQRcodeWrapper } from '@selfxyz/qrcode';
 import { SelfAppBuilder } from '@selfxyz/qrcode';
 import { useRouter } from 'next/navigation';
+import { useLocalStorage } from '../../hooks/useLocalStorage';
 
 interface QRVerificationPageProps {
   onVerificationComplete?: () => void;
@@ -22,6 +23,7 @@ export default function QRVerificationPage({
   const [selfApp, setSelfApp] = useState<any | null>(null);
   const [verificationStatus, setVerificationStatus] = useState<'pending' | 'success' | 'error'>('pending');
   const router = useRouter();
+  const [, setUserVerified] = useLocalStorage('user_verified', null);
 
   // Initialize Self Protocol
   useEffect(() => {
@@ -53,8 +55,8 @@ export default function QRVerificationPage({
   // Auto-redirect to dashboard on successful verification
   useEffect(() => {
     if (verificationStatus === 'success') {
-      // Store verification status
-      localStorage.setItem('user_verified', 'true');
+      // Store verification status using safe localStorage hook
+      setUserVerified('true');
       
       // Small delay to ensure localStorage is set before navigation
       const timer = setTimeout(() => {
@@ -63,7 +65,7 @@ export default function QRVerificationPage({
       
       return () => clearTimeout(timer);
     }
-  }, [verificationStatus, onVerificationComplete]);
+  }, [verificationStatus, onVerificationComplete, setUserVerified]);
 
   const handleVerificationSuccess = () => {
     console.log('Verification successful!');
@@ -77,8 +79,8 @@ export default function QRVerificationPage({
   };
 
   const handleDisconnect = () => {
-    // Clear verification status
-    localStorage.removeItem('user_verified');
+    // Clear verification status using safe localStorage hook
+    setUserVerified(null);
     // Disconnect wallet
     disconnect();
     // Return to wallet connect page
@@ -87,7 +89,7 @@ export default function QRVerificationPage({
 
   // Handle manual navigation to dashboard after verification
   const handleContinueToDashboard = () => {
-    localStorage.setItem('user_verified', 'true');
+    setUserVerified('true');
     onVerificationComplete?.();
   };
 

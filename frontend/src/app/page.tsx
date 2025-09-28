@@ -5,6 +5,7 @@ import { useAccount } from 'wagmi';
 import { useRouter } from 'next/navigation';
 import WalletConnectPage from './pages/components/WalletConnectPage';
 import QRVerificationPage from './pages/components/QRVerificationPage';
+import { useLocalStorage } from './hooks/useLocalStorage';
 
 type AppPage = 'wallet-connect' | 'qr-verification';
 
@@ -12,6 +13,7 @@ export default function Home() {
   const [currentPage, setCurrentPage] = useState<AppPage>('wallet-connect');
   const { isConnected } = useAccount();
   const router = useRouter();
+  const [, setUserVerified] = useLocalStorage('user_verified', null);
 
   const handleWalletConnected = () => {
     setCurrentPage('qr-verification');
@@ -24,16 +26,16 @@ export default function Home() {
   // Updated to redirect to dashboard instead of showing "Start Over" page
   const handleVerificationComplete = () => {
     console.log("Verification successful, navigating to dashboard");
-    // Store verification status in localStorage
-    localStorage.setItem('user_verified', 'true');
+    // Store verification status using safe localStorage hook
+    setUserVerified('true');
     // Navigate to dashboard
     router.push('/dashboard');
   };
 
   const handleVerificationError = () => {
     console.error("Verification failed");
-    // Clear any verification state
-    localStorage.removeItem('user_verified');
+    // Clear any verification state using safe localStorage hook
+    setUserVerified(null);
     // Go back to wallet connect
     setCurrentPage('wallet-connect');
   };

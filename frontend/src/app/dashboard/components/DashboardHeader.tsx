@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useAccount, useDisconnect } from 'wagmi';
 import Image from 'next/image';
 // We'll use the globe SVG for the logo, but you can replace this with any logo you prefer
@@ -12,7 +12,6 @@ const DashboardHeader = () => {
   const { address } = useAccount();
   const { disconnect } = useDisconnect();
   const router = useRouter();
-  const pathname = usePathname();
 
   const handleLogout = () => {
     // Clear verification status
@@ -46,12 +45,7 @@ const DashboardHeader = () => {
           <Link 
             key={item.name} 
             href={item.href}
-            className={`px-6 py-2 text-sm font-semibold tracking-wider uppercase transition-all duration-300 rounded-md border ${
-              (item.href === '/dashboard' && pathname === '/dashboard') || 
-              (item.href !== '/dashboard' && pathname?.startsWith(item.href))
-                ? 'text-cyan-400 bg-gray-900 border-cyan-500/50' 
-                : 'text-gray-300 border-transparent hover:text-cyan-400 hover:bg-gray-900 hover:border-gray-700'
-            }`}
+            className="px-6 py-2 text-sm font-semibold tracking-wider uppercase transition-all duration-300 hover:text-cyan-400 hover:bg-gray-900 rounded-md border border-transparent hover:border-gray-700"
           >
             {item.name}
           </Link>
