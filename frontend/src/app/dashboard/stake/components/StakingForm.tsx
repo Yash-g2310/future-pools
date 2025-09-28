@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAccount } from 'wagmi';
 import { useStakingPool } from '../../../hooks/useStakingPool';
 import { toast } from 'react-hot-toast'; // Install this package if not already
@@ -9,41 +9,101 @@ export default function StakingForm() {
   const [amount, setAmount] = useState<string>('');
   const [isStaking, setIsStaking] = useState<boolean>(true); // true = stake, false = unstake
   const { address } = useAccount();
-  const { balances, stake, unstake, isStaking: isStakingLoading, isUnstaking } = useStakingPool();
+  const { 
+    balances, 
+    stake, 
+    unstake, 
+    isStaking: isStakingLoading, 
+    isUnstaking,
+    lastError,
+    transactionState,
+    refetchBalances
+  } = useStakingPool();
+
+  // Debug logging for component renders and state changes
+  console.log('🔍 StakingForm rendering:', { 
+    address, 
+    amount, 
+    isStaking, 
+    isStakingLoading, 
+    isUnstaking,
+    balances,
+    transactionState,
+    lastError
+  });
+  
+  // Log when account changes
+  useEffect(() => {
+    console.log('👤 Account changed:', address);
+    if (address) {
+      refetchBalances();
+    }
+  }, [address, refetchBalances]);
+
+  // Log when balances update
+  useEffect(() => {
+    console.log('💰 Balances updated:', balances);
+  }, [balances]);
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!amount || !address) return;
+    if (!amount || !address) {
+      console.log('❌ Form submission blocked:', { amount, address });
+      return;
+    }
     
     try {
+      console.log(`🚀 Initiating ${isStaking ? 'stake' : 'unstake'} for ${amount} PYUSD`);
       const loadingToast = toast.loading(
         `${isStaking ? 'Staking' : 'Unstaking'} ${amount} PYUSD...`
       );
       
       if (isStaking) {
+        console.log('📝 Calling stake function with amount:', amount);
         const success = await stake(amount);
+        console.log('📊 Stake result:', success);
+        
         if (success) {
           toast.success(`Successfully staked ${amount} PYUSD`, { id: loadingToast });
         } else {
-          toast.error('Transaction failed', { id: loadingToast });
+          toast.error(`Failed to stake: ${lastError || 'Unknown error'}`, { id: loadingToast });
+          console.error('❌ Staking failed:', lastError);
         }
       } else {
+        console.log('📝 Calling unstake function with amount:', amount);
         const success = await unstake(amount);
+        console.log('📊 Unstake result:', success);
+        
         if (success) {
           toast.success(`Successfully unstaked ${amount} PYUSD`, { id: loadingToast });
         } else {
-          toast.error('Transaction failed', { id: loadingToast });
+          toast.error(`Failed to unstake: ${lastError || 'Unknown error'}`, { id: loadingToast });
+          console.error('❌ Unstaking failed:', lastError);
         }
       }
       
       // Reset form after successful transaction
       setAmount('');
     } catch (error) {
-      console.error('Transaction failed:', error);
-      toast.error('Transaction failed');
+      console.error('💥 Transaction exception:', error);
+      toast.error(`Transaction failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
+  
+  // Debug status display
+  const renderDebugInfo = () => (
+    <div className="mt-4 p-3 bg-gray-900 rounded-lg text-xs font-mono overflow-auto max-h-40">
+      <h4 className="text-yellow-400 mb-1">🔍 Debug Information</h4>
+      <div className="text-gray-400">
+        <div><span className="text-yellow-300">Transaction state:</span> {transactionState}</div>
+        <div><span className="text-yellow-300">Is approving:</span> {isStakingLoading ? 'Yes' : 'No'}</div>
+        <div><span className="text-yellow-300">Is unstaking:</span> {isUnstaking ? 'Yes' : 'No'}</div>
+        <div><span className="text-yellow-300">Last error:</span> {lastError || 'None'}</div>
+        <div><span className="text-yellow-300">Connected address:</span> {address || 'Not connected'}</div>
+      </div>
+    </div>
+  );
   
   return (
     <div className="bg-gray-800 border border-gray-700 rounded-lg p-6">
@@ -59,7 +119,10 @@ export default function StakingForm() {
                 ? 'bg-blue-500 text-white' 
                 : 'text-gray-300 hover:text-white'
             }`}
-            onClick={() => setIsStaking(true)}
+            onClick={() => {
+              console.log('🔄 Switching to Stake mode');
+              setIsStaking(true);
+            }}
           >
             Stake
           </button>
@@ -70,7 +133,10 @@ export default function StakingForm() {
                 ? 'bg-blue-500 text-white' 
                 : 'text-gray-300 hover:text-white'
             }`}
-            onClick={() => setIsStaking(false)}
+            onClick={() => {
+              console.log('🔄 Switching to Unstake mode');
+              setIsStaking(false);
+            }}
           >
             Unstake
           </button>
@@ -86,7 +152,10 @@ export default function StakingForm() {
             <input
               type="number"
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              onChange={(e) => {
+                console.log('📝 Amount input changed:', e.target.value);
+                setAmount(e.target.value);
+              }}
               placeholder="0.00"
               className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:ring-blue-500 focus:border-blue-500"
               min="0"
@@ -104,7 +173,11 @@ export default function StakingForm() {
             <button 
               type="button"
               className="text-blue-400 hover:text-blue-300"
-              onClick={() => setAmount(isStaking ? balances.pyusdBalance.toString() : balances.availableBalance.toString())}
+              onClick={() => {
+                const maxValue = isStaking ? balances.pyusdBalance.toString() : balances.availableBalance.toString();
+                console.log('🔢 Setting MAX amount:', maxValue);
+                setAmount(maxValue);
+              }}
             >
               MAX
             </button>
@@ -150,6 +223,21 @@ export default function StakingForm() {
           )}
         </button>
       </form>
+      
+      {/* Debug info section */}
+      {process.env.NODE_ENV !== 'production' && renderDebugInfo()}
+      
+      {/* Manual refresh button */}
+      <button 
+        onClick={() => {
+          console.log('🔄 Manual balance refresh requested');
+          refetchBalances();
+          toast.success('Refreshing balances...');
+        }}
+        className="mt-4 w-full bg-gray-700 hover:bg-gray-600 text-gray-300 py-2 px-4 rounded-lg text-sm transition-colors"
+      >
+        🔄 Refresh Balances
+      </button>
     </div>
   );
 }
