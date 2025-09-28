@@ -30,7 +30,7 @@ export default function QRVerificationPage({
         version: 2,
         appName: process.env.NEXT_PUBLIC_SELF_APP_NAME || 'Futures Pool',
         scope: process.env.NEXT_PUBLIC_SELF_SCOPE || 'human-blacklist-scope',
-        endpoint: process.env.NEXT_PUBLIC_SELF_ENDPOINT || '0x16ECBA51e18a4a7e61fdC417f0d47AFEeDfbed74',
+        endpoint: process.env.NEXT_PUBLIC_SELF_ENDPOINT || '0x3e2aa34c333474e3692abfb7a3f97a44173d0401',
         logoBase64: 'https://i.postimg.cc/mrmVf9hm/self.png',
         userId: address,
         endpointType: 'staging_celo',
@@ -93,82 +93,127 @@ export default function QRVerificationPage({
 
   if (!isConnected || !address) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen bg-gray-50">
-        <div className="bg-white p-8 rounded-lg shadow-lg max-w-md w-full text-center">
-          <h2 className="text-xl font-semibold text-red-600 mb-4">Wallet Not Connected</h2>
-          <p className="text-gray-600 mb-6">Please connect your wallet first to proceed with verification.</p>
-          <button
-            onClick={onBackToWallet}
-            className="bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            Back to Wallet Connect
-          </button>
+      <div className="min-h-screen bg-black text-white">
+        {/* Uniform Grid background pattern */}
+        <div className="absolute inset-0">
+          <div className="absolute inset-0" style={{
+            backgroundImage: `
+              linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
+              linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)
+            `,
+            backgroundSize: '60px 60px'
+          }}></div>
+        </div>
+        
+        {/* Border lines */}
+        <div className="absolute left-0 top-0 bottom-0 w-px bg-white opacity-10"></div>
+        <div className="absolute right-0 top-0 bottom-0 w-px bg-white opacity-10"></div>
+        
+        <div className="relative flex flex-col items-center justify-center min-h-screen px-8">
+          <div className="bg-gray-900 border border-gray-700 rounded-lg p-8 max-w-md w-full text-center hover:border-gray-500 transition-colors duration-200">
+            <h2 className="text-2xl font-bold text-red-400 mb-4 font-vt323 tracking-wide">WALLET NOT CONNECTED</h2>
+            <p className="text-gray-300 mb-6 font-inter">Please connect your wallet first to proceed with verification.</p>
+            <button
+              onClick={onBackToWallet}
+              className="bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-400 hover:to-teal-400 text-white py-3 px-6 rounded-lg font-semibold uppercase tracking-wide transition-all duration-300 shadow-lg hover:shadow-cyan-500/25"
+            >
+              Back to Wallet Connect
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col items-center justify-center h-screen bg-gray-50">
-      <div className="bg-white p-8 rounded-lg shadow-lg max-w-md w-full">
-        <h1 className="text-3xl font-bold text-center mb-6">Passport Verification</h1>
-        
-        <div className="space-y-6">
-          {/* Connected Wallet Info */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <div className="flex justify-between items-center">
-              <div>
-                <p className="text-blue-800 font-medium">Connected Wallet</p>
-                <p className="text-blue-600 text-sm mt-1">
-                  {address.slice(0, 6)}...{address.slice(-4)}
-                </p>
-              </div>
-              <button
-                onClick={handleDisconnect}
-                className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-md text-sm 
-                         transition-colors duration-200 flex items-center gap-1"
-              >
-                <span>Disconnect</span>
-                <span className="text-xs">×</span>
-              </button>
-            </div>
+    <div className="min-h-screen bg-black text-white">
+      {/* Uniform Grid background pattern */}
+      <div className="absolute inset-0">
+        <div className="absolute inset-0" style={{
+          backgroundImage: `
+            linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)
+          `,
+          backgroundSize: '60px 60px'
+        }}></div>
+      </div>
+      
+      {/* Border lines */}
+      <div className="absolute left-0 top-0 bottom-0 w-px bg-white opacity-10"></div>
+      <div className="absolute right-0 top-0 bottom-0 w-px bg-white opacity-10"></div>
+      <div className="absolute top-0 left-0 right-0 h-px bg-white opacity-10"></div>
+      <div className="absolute bottom-0 left-0 right-0 h-px bg-white opacity-10"></div>
+      
+      {/* Header */}
+      <header className="relative flex items-center justify-between px-8 py-6 bg-black border-b border-gray-800">
+        {/* Left side - Logo */}
+        <div className="flex items-center">
+          <div className="w-10 h-10 bg-gradient-to-br from-cyan-400 to-teal-500 rounded-lg flex items-center justify-center">
+            <span className="text-black font-bold text-lg">V</span>
           </div>
+          <h1 className="ml-4 text-2xl font-bold tracking-wide text-white">
+            <span className="text-cyan-400">PASSPORT</span> VERIFICATION
+          </h1>
+        </div>
 
+        {/* Right side - Wallet info */}
+        <div className="flex items-center gap-3">
+          <div className="bg-gray-900 border border-gray-700 px-4 py-2 rounded-lg flex items-center">
+            <div className="w-2 h-2 bg-cyan-400 rounded-full mr-3 animate-pulse" />
+            <span className="text-sm font-mono text-gray-300">
+              {address.slice(0, 6)}...{address.slice(-4)}
+            </span>
+          </div>
+          <button 
+            onClick={handleDisconnect}
+            className="bg-transparent border border-gray-600 hover:border-cyan-400 hover:text-cyan-400 px-4 py-2 rounded-lg text-sm font-semibold uppercase tracking-wide transition-all duration-300"
+          >
+            Disconnect
+          </button>
+        </div>
+      </header>
+
+      {/* Main content */}
+      <div className="relative flex flex-col items-center justify-center min-h-[calc(100vh-80px)] px-8 py-12">
+        <div className="bg-gray-900 border border-gray-700 rounded-lg p-8 max-w-2xl w-full hover:border-gray-500 transition-colors duration-200">
+          
           {/* QR Code Section */}
           <div className="text-center">
             {verificationStatus === 'success' ? (
-              <div className="flex flex-col items-center space-y-4">
-                <div className="bg-green-100 text-green-700 p-4 rounded-lg flex items-center">
-                  <span className="text-2xl mr-2">✓</span>
+              <div className="flex flex-col items-center space-y-6">
+                <div className="bg-green-900/50 border border-green-500/50 text-green-400 p-6 rounded-lg flex items-center">
+                  <span className="text-3xl mr-3">✓</span>
                   <div>
-                    <h3 className="font-bold">Verification Successful</h3>
-                    <p>Your passport has been verified</p>
+                    <h3 className="text-xl font-bold font-vt323 tracking-wide">VERIFICATION SUCCESSFUL</h3>
+                    <p className="text-green-300 font-inter">Your passport has been verified</p>
                   </div>
                 </div>
                 <button
                   onClick={handleContinueToDashboard}
-                  className="bg-blue-600 hover:bg-blue-700 text-white py-2 px-6 rounded-lg transition-colors"
+                  className="bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-400 hover:to-teal-400 text-white py-3 px-8 rounded-lg font-semibold uppercase tracking-wide transition-all duration-300 shadow-lg hover:shadow-cyan-500/25"
                 >
                   Continue to Dashboard
                 </button>
               </div>
             ) : (
               <>
-                <h2 className="text-xl font-semibold mb-4">Scan QR Code for Verification</h2>
+                <h2 className="text-4xl font-bold text-white mb-6 font-vt323 tracking-wide">SCAN QR CODE FOR VERIFICATION</h2>
                 
                 {!selfApp ? (
-                  <div className="flex flex-col items-center space-y-4">
-                    <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600"></div>
-                    <p className="text-gray-600">Initializing verification...</p>
+                  <div className="flex flex-col items-center space-y-6">
+                    <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-cyan-400"></div>
+                    <p className="text-gray-300 font-inter">Initializing verification system...</p>
                   </div>
                 ) : (
-                  <div className="space-y-4">
-                    <SelfQRcodeWrapper
-                      selfApp={selfApp}
-                      onSuccess={handleVerificationSuccess}
-                      onError={handleVerificationError}
-                    />
-                    <p className="text-sm text-gray-600">
+                  <div className="space-y-6">
+                    <div className="bg-white p-6 rounded-lg inline-block">
+                      <SelfQRcodeWrapper
+                        selfApp={selfApp}
+                        onSuccess={handleVerificationSuccess}
+                        onError={handleVerificationError}
+                      />
+                    </div>
+                    <p className="text-gray-300 font-inter max-w-md mx-auto">
                       Use your mobile device to scan this QR code for passport verification
                     </p>
                   </div>
@@ -179,10 +224,10 @@ export default function QRVerificationPage({
 
           {/* Action Buttons */}
           {verificationStatus !== 'success' && (
-            <div className="flex space-x-4">
+            <div className="flex justify-center mt-8">
               <button
                 onClick={onBackToWallet}
-                className="flex-1 bg-gray-600 text-white py-2 px-4 rounded-lg hover:bg-gray-700 transition-colors"
+                className="bg-gray-800 border border-gray-600 hover:border-gray-500 text-gray-300 hover:text-white py-3 px-6 rounded-lg font-semibold uppercase tracking-wide transition-all duration-300"
               >
                 Back to Wallet
               </button>
